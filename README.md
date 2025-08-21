@@ -11,8 +11,10 @@ Aplicación web profesional para análisis avanzado de inventarios negativos con
 - ✅ **Mapa de calor dinámico** sin límite de filas (hasta 100+ pallets)
 - ✅ **Evolución individual** por pallet día a día
 - ✅ **Reportes descargables** (Excel/CSV) con hoja Top N incluida
-- ✅ **Interfaz responsiva** para cualquier dispositivo
+- ✅ **Interfaz responsiva** optimizada con mejor espaciado
+- ✅ **Sistema de caché inteligente** para mejor rendimiento
 - ✅ **Desplegable en la nube** con un clic
+- 🔄 **Función de impresión** (en desarrollo - vista previa disponible)
 
 ## 📋 Estructura del Proyecto
 
@@ -177,6 +179,20 @@ La aplicación espera archivos Excel con la siguiente estructura:
 - Datos Crudos
 - **Top N** (nuevo): Ranking con evolución temporal completa
 
+### Función de Impresión (🔄 En Desarrollo)
+**Estado actual:**
+- ✅ **Vista previa**: Genera vista optimizada para impresión
+- ✅ **Configuración**: Selección de secciones (KPIs, tablas, reincidencias)
+- ✅ **Formato**: Papel A4/Letter, orientación vertical/horizontal
+- 🔄 **Impresión selectiva**: Ctrl+P actualmente imprime toda la página
+- 🎯 **Objetivo**: Imprimir solo la vista previa generada
+
+**Uso actual:**
+1. Configurar secciones a incluir
+2. Generar vista previa (se ve correctamente)
+3. Para imprimir: Usar navegador → Imprimir → Seleccionar manualmente el área
+4. *Próximamente: Impresión automática solo de la vista previa*
+
 ## 🔧 Configuración Avanzada
 
 ### Configuración Mínima (.streamlit/config.toml)
@@ -272,6 +288,24 @@ pip install streamlit
 - Asegúrate de que los archivos Excel estén en formato UTF-8
 - Revisa nombres de columnas por caracteres especiales
 
+### 🔄 Problemas Conocidos y Soluciones
+
+**Función de Impresión:**
+- **Problema**: Ctrl+P imprime toda la página en lugar de solo la vista previa
+- **Estado**: En desarrollo - funcionalidad de vista previa completamente operativa
+- **Solución temporal**: Usar función de impresión del navegador y seleccionar manualmente el área de la vista previa
+- **Próxima actualización**: Implementación de impresión selectiva automática
+
+**Responsividad:**
+- ✅ **Solucionado**: Espaciado mejorado entre secciones del Súper Análisis
+- ✅ **Solucionado**: Headers bien posicionados y separados visualmente
+- ✅ **Solucionado**: Métricas muestran "N/A" en lugar de "nan"
+
+**Rendimiento:**
+- ✅ **Optimizado**: Sistema de caché implementado para funciones pesadas
+- ✅ **Mejorado**: Dependencias actualizadas para mejor compatibilidad
+- ✅ **Acelerado**: Despliegue más rápido con versiones flexibles
+
 ## 💡 Casos de Uso Avanzados
 
 ### Análisis de Código Específico
@@ -305,7 +339,7 @@ Para reportar problemas o solicitar funcionalidades:
 ### v6.0 - Migración Web con Súper Análisis
 - ✅ Interfaz web completa con Streamlit
 - ✅ Visualizaciones interactivas con Plotly
-- ✅ Despliegue en la nube
+- ✅ Despliegue en la nube optimizado
 - ✅ Manejo de archivos upload/download
 - ✅ Filtros en tiempo real
 - ✅ Súper análisis con filtros avanzados
@@ -314,8 +348,13 @@ Para reportar problemas o solicitar funcionalidades:
 - ✅ Hoja Top N en reportes Excel
 - ✅ Gráficos dinámicos que se actualizan con filtros
 - ✅ Identificación correcta Código_ID_Pallet en visualizaciones
+- ✅ **Sistema de caché inteligente** para mejor rendimiento
+- ✅ **Interfaz responsiva mejorada** con mejor espaciado
+- ✅ **Optimizaciones de despliegue** (dependencias flexibles, caché de funciones)
+- 🔄 **Vista previa de impresión** (funcional, impresión selectiva en desarrollo)
 
 ### Próximas características
+- 🔄 **Impresión selectiva** (solo vista previa, no página completa)
 - 🔄 Base de datos para histórico
 - 🔄 Autenticación de usuarios
 - 🔄 API REST para integración
