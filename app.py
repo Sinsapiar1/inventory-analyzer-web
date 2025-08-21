@@ -752,8 +752,8 @@ def main():
                 super_filtered = super_filtered[cols_to_show + date_range]
                 date_cols = date_range  # Actualizar date_cols para gráficos
             
-            # Mostrar información de filtrado
-            st.info(f"Mostrando {len(super_filtered)} de {len(super_analisis)} registros")
+            # Mostrar información de filtrado con mejor formato
+            st.info(f"📋 **Mostrando {len(super_filtered)} de {len(super_analisis)} registros** con los filtros aplicados")
             
             # Procesar datos para visualización
             if mostrar_vacios:
@@ -777,24 +777,30 @@ def main():
                 styled_super = super_display.style.applymap(colorear_super_analisis)
                 st.dataframe(styled_super, use_container_width=True, height=500)
                 
-                # Estadísticas rápidas
+                # Estadísticas rápidas - con mejor espaciado
+                st.markdown("---")  # Separador visual después de la tabla
+                st.markdown("#### 📊 Estadísticas de la Vista Actual")
+                
                 if date_cols:
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
                         total_neg = super_display[date_cols].select_dtypes(include=[np.number]).sum().sum()
-                        st.metric("Total Negativo", f"{total_neg:,.0f}")
+                        st.metric("Total Negativo", f"{total_neg:,.0f}", help="Suma total de valores negativos visibles")
                     
                     with col2:
                         pallets_activos = len(super_filtered) if solo_activos else len(super_filtered[super_filtered[date_cols].iloc[:, -1].notna()])
-                        st.metric("Pallets en Vista", pallets_activos)
+                        st.metric("Pallets en Vista", pallets_activos, help="Número de pallets mostrados con los filtros aplicados")
                     
                     with col3:
                         promedio_neg = super_display[date_cols].select_dtypes(include=[np.number]).mean().mean()
-                        st.metric("Promedio por Celda", f"{promedio_neg:.1f}")
+                        promedio_display = f"{promedio_neg:.1f}" if pd.notna(promedio_neg) else "N/A"
+                        st.metric("Promedio por Celda", promedio_display, help="Promedio de valores en las celdas visibles")
                 
-                # GRÁFICOS DINÁMICOS MEJORADOS - VERSIÓN COMPLETA
-                st.subheader("📈 Análisis Visual de Datos Filtrados")
+                # GRÁFICOS DINÁMICOS - con mejor separación
+                st.markdown("---")  # Separador antes de los gráficos
+                st.markdown("### 📈 Análisis Visual de Datos Filtrados")
+                st.markdown("Visualizaciones interactivas basadas en los datos filtrados mostrados arriba")
                 
                 # Crear gráficos solo si hay datos con fechas
                 if date_cols and len(super_filtered) > 0:
@@ -981,12 +987,14 @@ def main():
                                f"Mostrando {max_lines} de {len(super_filtered)} pallets filtrados.")
                 
                 # Botón de descarga específico del súper análisis filtrado
+                st.markdown("---")  # Separador antes del botón de descarga
                 csv_super = super_display.to_csv(index=False)
                 st.download_button(
                     label="📥 Descargar Súper Análisis Filtrado (CSV)",
                     data=csv_super,
                     file_name=f"Super_Analisis_Filtrado_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                    mime="text/csv"
+                    mime="text/csv",
+                    help="Descarga los datos filtrados actualmente mostrados en formato CSV"
                 )
             else:
                 st.warning("No hay datos que coincidan con los filtros aplicados.")
