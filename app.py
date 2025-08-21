@@ -17,6 +17,128 @@ warnings.filterwarnings("ignore")
 pd.set_option('display.precision', 2)
 pd.set_option('mode.chained_assignment', None)
 
+# Funciones auxiliares con caché
+@st.cache_data
+def process_excel_file(file_content, filename):
+    """Procesa un archivo Excel individual"""
+    try:
+        # Detectar fecha en nombre archivo
+        parts = filename.split("_")
+        fecha_str = next((p for p in parts if p.isdigit() and len(p) == 8), None)
+        
+        if fecha_str:
+            fecha_reporte = datetime.strptime(fecha_str, "%Y%m%d")
+        else:
+            fecha_reporte = datetime.now()
+        
+        # Leer Excel
+        df = pd.read_excel(io.BytesIO(file_content), sheet_name=1)  # Segunda hoja por defecto
+        df["Fecha_Reporte"] = pd.to_datetime(fecha_reporte)
+        df["Archivo_Origen"] = filename
+        
+        return df, True, None
+        
+    except Exception as e:
+        return None, False, str(e)
+
+@st.cache_data
+def normalize_dataframe(df):
+    """Normaliza nombres de columnas y limpia datos"""
+    # Normalización de columnas
+    df = df.rename(columns={
+        "Código": "Codigo",
+        "Código Producto": "Codigo",
+        "ID de Pallet": "ID_Pallet",
+        "Inventario Físico": "Cantidad_Negativa",
+        "Nombre": "Nombre",
+        "Descripción": "Nombre",
+        "Almacén": "Almacen",
+        "Almacen": "Almacen",
+        "Warehouse": "Almacen",
+        "Ubicación": "Almacen",
+        "Ubicacion": "Almacen",
+    })
+    
+    # Limpiar códigos y pallets
+    for col in ["Codigo", "ID_Pallet"]:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .astype(str)
+                .str.replace(",", "", regex=False)
+                .str.split(".").str[0]
+                .str.strip()
+            )
+        else:
+            df[col] = "N/A"
+    
+    # Campos obligatorios
+    if "Nombre" not in df.columns:
+        df["Nombre"] = ""
+    if "Almacen" not in df.columns:
+        df["Almacen"] = "N/A"
+    
+    # Cantidad negativa
+    if "Cantidad_Negativa" not in df.columns:
+        for alt in ["Cantidad", "Qty", "Inventario", "Stock"]:
+            if alt in df.columns:
+                df["Cantidad_Negativa"] = df[alt]
+                break
+    
+    df["Cantidad_Negativa"] = pd.to_numeric(df["Cantidad_Negativa"], errors="coerce").fillna(0)
+    
+    # Solo negativos
+    df = df[df["Cantidad_Negativa"] < 0].copy()
+    
+    # ID único pallet
+    df["ID_Unico_Pallet"] = df["Codigo"].astype(str) + "_" + df["ID_Pallet"].astype(str)
+    
+    return df
+
+@st.cache_data
+def analyze_pallets_data(df_total):
+    """Análisis principal de pallets con caché"""
+    analisis = df_total.groupby("ID_Unico_Pallet").agg({
+        "Codigo": "first",
+        "Nombre": "first", 
+        "ID_Pallet": "first",
+        "Almacen": "first",
+        "Fecha_Reporte": ["min", "max", "count"],
+        "Cantidad_Negativa": ["mean", "min", "max", "sum"]
+    }).reset_index()
+    
+    analisis.columns = [
+        "ID_Unico_Pallet", "Codigo", "Nombre", "ID_Pallet", "Almacen",
+        "Primera_Aparicion", "Ultima_Aparicion", "Veces_Reportado", 
+        "Cantidad_Promedio", "Cantidad_Minima", "Cantidad_Maxima", "Cantidad_Suma"
+    ]
+    
+    analisis["Dias_Acumulados"] = (analisis["Ultima_Aparicion"] - analisis["Primera_Aparicion"]).dt.days + 1
+    
+    # Severidad por magnitud del negativo
+    magnitudes = np.abs(analisis["Cantidad_Promedio"])
+    if len(magnitudes) > 0 and magnitudes.nunique() > 1:
+        q25, q50, q75 = np.percentile(magnitudes, [25, 50, 75])
+    else:
+        v = magnitudes.iloc[0] if len(magnitudes) > 0 else 0
+        q25 = q50 = q75 = v
+    
+    analisis["Severidad"] = pd.cut(
+        magnitudes,
+        bins=[-1, q25, q50, q75, float("inf")],
+        labels=["Bajo", "Medio", "Alto", "Crítico"],
+        include_lowest=True
+    )
+    
+    # Estado (activo/resuelto)
+    fecha_ultimo = df_total["Fecha_Reporte"].max()
+    analisis["Estado"] = np.where(analisis["Ultima_Aparicion"] == fecha_ultimo, "Activo", "Resuelto")
+    
+    # Score de criticidad
+    analisis["Score_Criticidad"] = analisis["Dias_Acumulados"] * np.abs(analisis["Cantidad_Promedio"])
+    
+    return analisis
+
 # Configuración de la página
 st.set_page_config(
     page_title="Analizador de Inventarios Negativos v6.0 Web",
@@ -89,8 +211,7 @@ class InventoryAnalyzerWeb:
         if 'progress_placeholder' in st.session_state:
             st.session_state.progress_placeholder.text('\n'.join(self.logger_messages[-5:]))
     
-    @st.cache_data
-    def process_uploaded_files(_self, uploaded_files):
+    def process_uploaded_files(self, uploaded_files):
         """Procesa archivos subidos y normaliza datos"""
         if not uploaded_files:
             raise ValueError("No se subieron archivos")
@@ -99,27 +220,18 @@ class InventoryAnalyzerWeb:
         
         all_dfs = []
         for uploaded_file in uploaded_files:
-            try:
-                # Detectar fecha en nombre archivo
-                filename = uploaded_file.name
-                parts = filename.split("_")
-                fecha_str = next((p for p in parts if p.isdigit() and len(p) == 8), None)
-                
-                if fecha_str:
-                    fecha_reporte = datetime.strptime(fecha_str, "%Y%m%d")
-                else:
-                    fecha_reporte = datetime.now()
-                
-                # Leer Excel
-                df = pd.read_excel(uploaded_file, sheet_name=1)  # Segunda hoja por defecto
-                df["Fecha_Reporte"] = pd.to_datetime(fecha_reporte)
-                df["Archivo_Origen"] = filename
+            # Leer el contenido del archivo
+            file_content = uploaded_file.read()
+            filename = uploaded_file.name
+            
+            # Usar función cacheada
+            df, success, error = process_excel_file(file_content, filename)
+            
+            if success:
                 all_dfs.append(df)
-                
                 self.log(f"✅ Procesado: {filename} ({len(df)} registros)")
-                
-            except Exception as e:
-                self.log(f"⚠️ Error en {uploaded_file.name}: {e}")
+            else:
+                self.log(f"⚠️ Error en {filename}: {error}")
                 continue
         
         if not all_dfs:
@@ -128,110 +240,24 @@ class InventoryAnalyzerWeb:
         df_total = pd.concat(all_dfs, ignore_index=True)
         return self.normalize_data(df_total)
     
-    @st.cache_data
-    def normalize_data(_self, df):
+    def normalize_data(self, df):
         """Normaliza nombres de columnas y limpia datos"""
-        # Normalización de columnas
-        df.rename(columns={
-            "Código": "Codigo",
-            "Código Producto": "Codigo",
-            "ID de Pallet": "ID_Pallet",
-            "Inventario Físico": "Cantidad_Negativa",
-            "Nombre": "Nombre",
-            "Descripción": "Nombre",
-            "Almacén": "Almacen",
-            "Almacen": "Almacen",
-            "Warehouse": "Almacen",
-            "Ubicación": "Almacen",
-            "Ubicacion": "Almacen",
-        }, inplace=True)
-        
-        # Limpiar códigos y pallets
-        for col in ["Codigo", "ID_Pallet"]:
-            if col in df.columns:
-                df[col] = (
-                    df[col]
-                    .astype(str)
-                    .str.replace(",", "", regex=False)
-                    .str.split(".").str[0]
-                    .str.strip()
-                )
-            else:
-                df[col] = "N/A"
-        
-        # Campos obligatorios
-        if "Nombre" not in df.columns:
-            df["Nombre"] = ""
-        if "Almacen" not in df.columns:
-            df["Almacen"] = "N/A"
-        
-        # Cantidad negativa
-        if "Cantidad_Negativa" not in df.columns:
-            for alt in ["Cantidad", "Qty", "Inventario", "Stock"]:
-                if alt in df.columns:
-                    df["Cantidad_Negativa"] = df[alt]
-                    break
-        
-        df["Cantidad_Negativa"] = pd.to_numeric(df["Cantidad_Negativa"], errors="coerce").fillna(0)
-        
-        # Solo negativos
-        df = df[df["Cantidad_Negativa"] < 0].copy()
-        
-        # ID único pallet
-        df["ID_Unico_Pallet"] = df["Codigo"].astype(str) + "_" + df["ID_Pallet"].astype(str)
-        
-        self.log(f"📊 Datos normalizados: {len(df)} registros negativos")
-        return df
+        # Usar función cacheada
+        normalized_df = normalize_dataframe(df)
+        self.log(f"📊 Datos normalizados: {len(normalized_df)} registros negativos")
+        return normalized_df
     
-    @st.cache_data
-    def analyze_pallets(_self, df_total):
+    def analyze_pallets(self, df_total):
         """Análisis principal de pallets"""
         self.log("🔍 Analizando pallets...")
         
-        analisis = df_total.groupby("ID_Unico_Pallet").agg({
-            "Codigo": "first",
-            "Nombre": "first", 
-            "ID_Pallet": "first",
-            "Almacen": "first",
-            "Fecha_Reporte": ["min", "max", "count"],
-            "Cantidad_Negativa": ["mean", "min", "max", "sum"]
-        }).reset_index()
-        
-        analisis.columns = [
-            "ID_Unico_Pallet", "Codigo", "Nombre", "ID_Pallet", "Almacen",
-            "Primera_Aparicion", "Ultima_Aparicion", "Veces_Reportado", 
-            "Cantidad_Promedio", "Cantidad_Minima", "Cantidad_Maxima", "Cantidad_Suma"
-        ]
-        
-        analisis["Dias_Acumulados"] = (analisis["Ultima_Aparicion"] - analisis["Primera_Aparicion"]).dt.days + 1
-        
-        # Severidad por magnitud del negativo
-        magnitudes = np.abs(analisis["Cantidad_Promedio"])
-        if len(magnitudes) > 0 and magnitudes.nunique() > 1:
-            q25, q50, q75 = np.percentile(magnitudes, [25, 50, 75])
-        else:
-            v = magnitudes.iloc[0] if len(magnitudes) > 0 else 0
-            q25 = q50 = q75 = v
-        
-        analisis["Severidad"] = pd.cut(
-            magnitudes,
-            bins=[-1, q25, q50, q75, float("inf")],
-            labels=["Bajo", "Medio", "Alto", "Crítico"],
-            include_lowest=True
-        )
-        
-        # Estado (activo/resuelto)
-        fecha_ultimo = df_total["Fecha_Reporte"].max()
-        analisis["Estado"] = np.where(analisis["Ultima_Aparicion"] == fecha_ultimo, "Activo", "Resuelto")
-        
-        # Score de criticidad
-        analisis["Score_Criticidad"] = analisis["Dias_Acumulados"] * np.abs(analisis["Cantidad_Promedio"])
+        # Usar función cacheada
+        analisis = analyze_pallets_data(df_total)
         
         self.log(f"✅ Análisis completado: {len(analisis)} pallets únicos")
         return analisis
     
-    @st.cache_data
-    def create_super_analysis(_self, df_total):
+    def create_super_analysis(self, df_total):
         """Crea tabla pivote con evolución temporal"""
         self.log("📈 Creando súper análisis...")
         
@@ -250,8 +276,7 @@ class InventoryAnalyzerWeb:
         self.log(f"📊 Súper análisis: {tabla.shape[0]} × {tabla.shape[1]}")
         return tabla
     
-    @st.cache_data
-    def detect_recurrences(_self, df_total):
+    def detect_recurrences(self, df_total):
         """Detecta reincidencias"""
         self.log("🔄 Detectando reincidencias...")
         
