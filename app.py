@@ -13,6 +13,10 @@ import zipfile
 
 warnings.filterwarnings("ignore")
 
+# Configurar pandas para mejor rendimiento
+pd.set_option('display.precision', 2)
+pd.set_option('mode.chained_assignment', None)
+
 # Configuración de la página
 st.set_page_config(
     page_title="Analizador de Inventarios Negativos v6.0 Web",
@@ -85,7 +89,8 @@ class InventoryAnalyzerWeb:
         if 'progress_placeholder' in st.session_state:
             st.session_state.progress_placeholder.text('\n'.join(self.logger_messages[-5:]))
     
-    def process_uploaded_files(self, uploaded_files):
+    @st.cache_data
+    def process_uploaded_files(_self, uploaded_files):
         """Procesa archivos subidos y normaliza datos"""
         if not uploaded_files:
             raise ValueError("No se subieron archivos")
@@ -123,7 +128,8 @@ class InventoryAnalyzerWeb:
         df_total = pd.concat(all_dfs, ignore_index=True)
         return self.normalize_data(df_total)
     
-    def normalize_data(self, df):
+    @st.cache_data
+    def normalize_data(_self, df):
         """Normaliza nombres de columnas y limpia datos"""
         # Normalización de columnas
         df.rename(columns={
@@ -177,7 +183,8 @@ class InventoryAnalyzerWeb:
         self.log(f"📊 Datos normalizados: {len(df)} registros negativos")
         return df
     
-    def analyze_pallets(self, df_total):
+    @st.cache_data
+    def analyze_pallets(_self, df_total):
         """Análisis principal de pallets"""
         self.log("🔍 Analizando pallets...")
         
@@ -223,7 +230,8 @@ class InventoryAnalyzerWeb:
         self.log(f"✅ Análisis completado: {len(analisis)} pallets únicos")
         return analisis
     
-    def create_super_analysis(self, df_total):
+    @st.cache_data
+    def create_super_analysis(_self, df_total):
         """Crea tabla pivote con evolución temporal"""
         self.log("📈 Creando súper análisis...")
         
@@ -242,7 +250,8 @@ class InventoryAnalyzerWeb:
         self.log(f"📊 Súper análisis: {tabla.shape[0]} × {tabla.shape[1]}")
         return tabla
     
-    def detect_recurrences(self, df_total):
+    @st.cache_data
+    def detect_recurrences(_self, df_total):
         """Detecta reincidencias"""
         self.log("🔄 Detectando reincidencias...")
         
@@ -265,6 +274,7 @@ class InventoryAnalyzerWeb:
         return pd.DataFrame(reincidencias)
 
 # Función para crear gráficos
+@st.cache_data
 def create_charts(analisis, super_analisis, top_n=10):
     """Crea gráficos interactivos con Plotly"""
     
@@ -374,6 +384,7 @@ def create_charts(analisis, super_analisis, top_n=10):
     return fig1, fig2, fig3, fig4
 
 # Función para generar reporte Excel
+@st.cache_data
 def generate_excel_report(analisis, super_analisis, reincidencias, df_total, top_n=10):
     """Genera reporte Excel descargable con hoja Top N"""
     buffer = io.BytesIO()
