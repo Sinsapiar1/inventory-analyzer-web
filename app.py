@@ -1042,12 +1042,50 @@ def main():
                     filtros.append(f"Estado: {filter_estado}")
                 filtros_txt = ", ".join(filtros) if filtros else "Sin filtros aplicados"
                 
-                # Generar reporte usando componentes nativos de Streamlit
+                # CSS para impresión específica - oculta todo excepto la vista previa
+                st.markdown("""
+                <style>
+                @media print {
+                    /* Ocultar sidebar y elementos de navegación */
+                    .stSidebar, .stTabs, .stExpander, .stButton, .stSelectbox, .stCheckbox {
+                        display: none !important;
+                    }
+                    
+                    /* Ocultar todo lo que NO sea la vista previa */
+                    .main .block-container > div:not(.print-report-container) {
+                        display: none !important;
+                    }
+                    
+                    /* Mostrar solo el contenedor de la vista previa */
+                    .print-report-container {
+                        display: block !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                    }
+                    
+                    /* Ajustes para impresión */
+                    @page {
+                        margin: 0.5in;
+                        size: A4;
+                    }
+                    
+                    body {
+                        font-size: 12px;
+                        line-height: 1.4;
+                    }
+                    
+                    /* Ocultar headers de Streamlit */
+                    header, .stApp > header, .stDecoration {
+                        display: none !important;
+                    }
+                }
+                </style>
+                """, unsafe_allow_html=True)
                 
-                # Mostrar el reporte usando componentes nativos de Streamlit (más confiable)
-                st.markdown("---")
+                # Contenedor específico para la vista previa de impresión
+                st.markdown('<div class="print-report-container">', unsafe_allow_html=True)
                 
-                # Header del reporte con CSS que funciona
+                # Header del reporte
                 st.markdown(f"""
                 <div style="text-align: center; border: 2px solid #667eea; padding: 20px; border-radius: 10px; background: white; margin: 20px 0;">
                     <h1 style="color: #667eea; margin: 0;">📊 Reporte de Inventarios Negativos</h1>
@@ -1162,9 +1200,12 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
                 
+                # Cerrar contenedor de vista previa
+                st.markdown('</div>', unsafe_allow_html=True)
+                
                 # Mensaje de éxito con animación
                 st.balloons()
-                st.success("✅ ¡Vista previa generada exitosamente! La página actual está optimizada para impresión. Usa Ctrl+P para imprimir.")
+                st.success("✅ ¡Vista previa generada exitosamente! Ahora al usar Ctrl+P se imprimirá SOLO esta vista previa, no toda la página.")
     
     elif not uploaded_files:
         # Instrucciones de uso
