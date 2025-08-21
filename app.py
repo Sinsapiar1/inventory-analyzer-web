@@ -1016,6 +1016,271 @@ def main():
                 file_name=f"Analisis_Pallets_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                 mime="text/csv"
             )
+        
+        # FUNCIONALIDAD DE IMPRESIÓN RESPONSIVA
+        st.markdown("---")
+        st.subheader("🖨️ Generar Reporte para Impresión")
+        
+        with st.expander("📋 Configurar y Generar Reporte Imprimible", expanded=False):
+            col1, col2 = st.columns(2)
+            with col1:
+                print_kpis = st.checkbox("📈 Incluir KPIs", True, key="kpis_check")
+                print_table = st.checkbox("📊 Incluir tabla (Top 20)", True, key="table_check")
+                print_reincidencias = st.checkbox("🔄 Incluir reincidencias", True, key="reincid_check")
+            with col2:
+                paper = st.selectbox("📄 Papel", ["A4", "Letter"], key="paper_select")
+                orient = st.selectbox("🔄 Orientación", ["Vertical", "Horizontal"], key="orient_select")
+            
+            if st.button("👁️ Generar Vista Previa para Impresión", type="primary", key="generate_print"):
+                # Filtros aplicados
+                filtros = []
+                if filter_almacen != "Todos": 
+                    filtros.append(f"Almacén: {filter_almacen}")
+                if filter_severidad != "Todas": 
+                    filtros.append(f"Severidad: {filter_severidad}")
+                if filter_estado != "Todos": 
+                    filtros.append(f"Estado: {filter_estado}")
+                filtros_txt = ", ".join(filtros) if filtros else "Sin filtros aplicados"
+                
+                # CSS y HTML del reporte
+                reporte_html = f'''
+                <style>
+                .print-report {{
+                    background: white;
+                    padding: 30px;
+                    border: 2px dashed #667eea;
+                    border-radius: 15px;
+                    margin: 20px 0;
+                    font-family: Arial, sans-serif;
+                }}
+                .print-header {{
+                    text-align: center;
+                    border-bottom: 3px solid #667eea;
+                    padding-bottom: 20px;
+                    margin-bottom: 30px;
+                }}
+                .section-title {{
+                    font-size: 22px;
+                    font-weight: bold;
+                    color: #333;
+                    margin: 25px 0 15px 0;
+                    border-left: 5px solid #667eea;
+                    padding-left: 15px;
+                }}
+                .kpi-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                    gap: 20px;
+                    margin: 25px 0;
+                }}
+                .kpi-item {{
+                    text-align: center;
+                    padding: 20px;
+                    border: 2px solid #667eea;
+                    border-radius: 12px;
+                    background: linear-gradient(135deg, #f8f9ff 0%, #e8f4f8 100%);
+                }}
+                .kpi-number {{
+                    font-size: 32px;
+                    font-weight: bold;
+                    color: #667eea;
+                    margin: 10px 0;
+                }}
+                .data-table {{
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin: 20px 0;
+                    font-size: 12px;
+                }}
+                .data-table th {{
+                    background: #667eea;
+                    color: white;
+                    padding: 10px 8px;
+                    text-align: left;
+                    font-weight: bold;
+                }}
+                .data-table td {{
+                    padding: 8px;
+                    border: 1px solid #ddd;
+                    text-align: left;
+                }}
+                .data-table tr:nth-child(even) {{
+                    background-color: #f8f9ff;
+                }}
+                .print-footer {{
+                    margin-top: 40px;
+                    text-align: center;
+                    border-top: 3px solid #667eea;
+                    padding-top: 20px;
+                    color: #666;
+                    font-size: 14px;
+                }}
+                @media print {{
+                    .print-report {{ border: none; margin: 0; }}
+                    @page {{
+                        size: {paper};
+                        margin: 0.75in;
+                        orientation: {'landscape' if orient == 'Horizontal' else 'portrait'};
+                    }}
+                    body {{ font-size: 12px; line-height: 1.4; }}
+                }}
+                </style>
+                
+                <div class="print-report">
+                    <div class="print-header">
+                        <h1 style="color: #667eea; margin: 0; font-size: 32px;">📊 Reporte de Inventarios Negativos</h1>
+                        <h2 style="color: #666; font-weight: normal; margin: 15px 0;">Sistema de Análisis Avanzado v6.0</h2>
+                        <p style="margin: 5px 0;"><strong>Fecha de generación:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
+                        <p style="margin: 5px 0;"><strong>Filtros aplicados:</strong> {filtros_txt}</p>
+                    </div>
+                '''
+                
+                # KPIs Section
+                if print_kpis:
+                    total_pallets = len(analisis_filtered)
+                    activos = (analisis_filtered["Estado"] == "Activo").sum() if total_pallets > 0 else 0
+                    dias_promedio = round(analisis_filtered["Dias_Acumulados"].mean(), 1) if total_pallets > 0 else 0
+                    total_negativo = round(analisis_filtered["Cantidad_Suma"].sum(), 0) if total_pallets > 0 else 0
+                    
+                    reporte_html += f'''
+                    <div class="section-title">📈 Indicadores Clave de Rendimiento (KPIs)</div>
+                    <div class="kpi-grid">
+                        <div class="kpi-item">
+                            <h4 style="margin: 0; color: #333;">Total de Pallets</h4>
+                            <div class="kpi-number">{total_pallets}</div>
+                            <small style="color: #666;">Registros analizados</small>
+                        </div>
+                        <div class="kpi-item">
+                            <h4 style="margin: 0; color: #333;">Problemas Activos</h4>
+                            <div class="kpi-number">{activos}</div>
+                            <small style="color: #666;">Requieren atención hoy</small>
+                        </div>
+                        <div class="kpi-item">
+                            <h4 style="margin: 0; color: #333;">Días Promedio</h4>
+                            <div class="kpi-number">{dias_promedio}</div>
+                            <small style="color: #666;">Duración del problema</small>
+                        </div>
+                        <div class="kpi-item">
+                            <h4 style="margin: 0; color: #333;">Cantidad Negativa</h4>
+                            <div class="kpi-number">{total_negativo:,.0f}</div>
+                            <small style="color: #666;">Total acumulado</small>
+                        </div>
+                    </div>
+                    '''
+                
+                # Main Table Section
+                if print_table and not analisis_filtered.empty:
+                    num_records = min(20, len(analisis_filtered))
+                    reporte_html += f'''
+                    <div class="section-title">📊 Análisis Principal - Top {num_records} Registros Críticos</div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Nombre Producto</th>
+                                <th>ID Pallet</th>
+                                <th>Almacén</th>
+                                <th>Severidad</th>
+                                <th>Días Acum.</th>
+                                <th>Cant. Promedio</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                    '''
+                    
+                    for _, row in analisis_filtered.head(20).iterrows():
+                        nombre_corto = str(row.get('Nombre', 'N/A'))[:25] + ('...' if len(str(row.get('Nombre', ''))) > 25 else '')
+                        dias_val = int(row.get('Dias_Acumulados', 0)) if pd.notna(row.get('Dias_Acumulados')) else 'N/A'
+                        cant_val = f"{row.get('Cantidad_Promedio', 0):.2f}" if pd.notna(row.get('Cantidad_Promedio')) else 'N/A'
+                        
+                        reporte_html += f'''
+                        <tr>
+                            <td>{row.get('Codigo', 'N/A')}</td>
+                            <td>{nombre_corto}</td>
+                            <td>{row.get('ID_Pallet', 'N/A')}</td>
+                            <td>{row.get('Almacen', 'N/A')}</td>
+                            <td><strong>{row.get('Severidad', 'N/A')}</strong></td>
+                            <td>{dias_val}</td>
+                            <td>{cant_val}</td>
+                            <td>{row.get('Estado', 'N/A')}</td>
+                        </tr>
+                        '''
+                    
+                    reporte_html += '</tbody></table>'
+                
+                # Recurrences Section
+                if print_reincidencias and not reincidencias.empty:
+                    num_reincidencias = min(15, len(reincidencias))
+                    reporte_html += f'''
+                    <div class="section-title">🔄 Reincidencias Detectadas - Top {num_reincidencias} Casos</div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Nombre del Producto</th>
+                                <th>Almacén</th>
+                                <th>Fechas de Ocurrencia</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                    '''
+                    
+                    for _, row in reincidencias.head(15).iterrows():
+                        nombre_reincid = str(row.get('Nombre', 'N/A'))[:30] + ('...' if len(str(row.get('Nombre', ''))) > 30 else '')
+                        fechas_cortas = str(row.get('Fechas', 'N/A'))[:50] + ('...' if len(str(row.get('Fechas', ''))) > 50 else '')
+                        
+                        reporte_html += f'''
+                        <tr>
+                            <td>{row.get('Codigo', 'N/A')}</td>
+                            <td>{nombre_reincid}</td>
+                            <td>{row.get('Almacen', 'N/A')}</td>
+                            <td style="font-size: 10px;">{fechas_cortas}</td>
+                        </tr>
+                        '''
+                    
+                    reporte_html += '</tbody></table>'
+                
+                # Footer
+                reporte_html += f'''
+                    <div class="print-footer">
+                        <h4 style="margin: 0; color: #667eea;">Analizador de Inventarios Negativos v6.0 Web</h4>
+                        <p style="margin: 10px 0;">Reporte generado automáticamente el {datetime.now().strftime('%d/%m/%Y a las %H:%M')}</p>
+                        <p style="margin: 5px 0; font-style: italic;">Sistema profesional de análisis con detección de reincidencias y clasificación automática por severidad</p>
+                    </div>
+                </div>
+                '''
+                
+                # Mostrar el reporte
+                st.markdown(reporte_html, unsafe_allow_html=True)
+                
+                # Instrucciones de impresión
+                st.markdown(f'''
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 15px; margin: 25px 0;">
+                    <h3 style="margin-top: 0; text-align: center;">🖨️ Instrucciones para Imprimir</h3>
+                    <div style="background: rgba(255,255,255,0.15); padding: 20px; border-radius: 10px;">
+                        <ol style="margin: 0; padding-left: 25px; line-height: 1.8;">
+                            <li><strong>Presiona Ctrl+P</strong> (Windows/Linux) o <strong>Cmd+P</strong> (Mac)</li>
+                            <li><strong>En las opciones de impresión:</strong>
+                                <ul style="margin: 10px 0; padding-left: 20px;">
+                                    <li>✅ <strong>Activar "Gráficos de fondo"</strong> para ver todos los colores</li>
+                                    <li>📄 <strong>Tamaño de papel:</strong> {paper}</li>
+                                    <li>🔄 <strong>Orientación:</strong> {orient}</li>
+                                    <li>⚙️ <strong>Márgenes:</strong> Ajustar si es necesario</li>
+                                </ul>
+                            </li>
+                            <li><strong>¡Hacer clic en Imprimir!</strong> 🖨️</li>
+                        </ol>
+                    </div>
+                    <p style="text-align: center; margin: 15px 0 0 0; font-style: italic;">
+                        💡 <strong>Tip:</strong> El reporte se ajusta automáticamente para impresión responsiva en cualquier tamaño de papel
+                    </p>
+                </div>
+                ''', unsafe_allow_html=True)
+                
+                # Mensaje de éxito
+                st.balloons()
+                st.success("✅ ¡Vista previa generada exitosamente! Ahora puedes imprimirla siguiendo las instrucciones.")
     
     elif not uploaded_files:
         # Instrucciones de uso
