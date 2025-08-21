@@ -1251,11 +1251,102 @@ def main():
                 </div>
                 '''
                 
-                # Mostrar el reporte
-                st.markdown(reporte_html, unsafe_allow_html=True)
+                # Mostrar el reporte usando componentes nativos de Streamlit (más confiable)
+                st.markdown("---")
                 
-                # Instrucciones de impresión
-                st.markdown(f'''
+                # Header del reporte con CSS que funciona
+                st.markdown(f"""
+                <div style="text-align: center; border: 2px solid #667eea; padding: 20px; border-radius: 10px; background: white; margin: 20px 0;">
+                    <h1 style="color: #667eea; margin: 0;">📊 Reporte de Inventarios Negativos</h1>
+                    <h3 style="color: #666; margin: 10px 0;">Sistema de Análisis Avanzado v6.0</h3>
+                    <p><strong>Fecha de generación:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
+                    <p><strong>Filtros aplicados:</strong> {filtros_txt}</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # KPIs usando métricas nativas de Streamlit
+                if print_kpis:
+                    st.subheader("📈 Indicadores Clave de Rendimiento (KPIs)")
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    total_pallets = len(analisis_filtered)
+                    activos = (analisis_filtered["Estado"] == "Activo").sum() if total_pallets > 0 else 0
+                    dias_promedio = round(analisis_filtered["Dias_Acumulados"].mean(), 1) if total_pallets > 0 else 0
+                    total_negativo = round(analisis_filtered["Cantidad_Suma"].sum(), 0) if total_pallets > 0 else 0
+                    
+                    with col1:
+                        st.metric("Total de Pallets", total_pallets, help="Registros analizados")
+                    with col2:
+                        st.metric("Problemas Activos", activos, help="Requieren atención hoy")
+                    with col3:
+                        st.metric("Días Promedio", dias_promedio, help="Duración del problema")
+                    with col4:
+                        st.metric("Cantidad Negativa", f"{total_negativo:,.0f}", help="Total acumulado")
+                
+                # Tabla principal usando dataframe nativo
+                if print_table and not analisis_filtered.empty:
+                    st.subheader("📊 Análisis Principal - Top 20 Registros Críticos")
+                    
+                    # Preparar datos para mejor visualización
+                    display_columns = ["Codigo", "Nombre", "ID_Pallet", "Almacen", "Severidad", "Dias_Acumulados", "Cantidad_Promedio", "Estado"]
+                    table_data = analisis_filtered.head(20)[display_columns].copy()
+                    
+                    # Formatear columnas para impresión
+                    if "Nombre" in table_data.columns:
+                        table_data["Nombre"] = table_data["Nombre"].astype(str).apply(lambda x: x[:25] + "..." if len(str(x)) > 25 else str(x))
+                    if "Dias_Acumulados" in table_data.columns:
+                        table_data["Dias_Acumulados"] = table_data["Dias_Acumulados"].fillna(0).astype(int)
+                    if "Cantidad_Promedio" in table_data.columns:
+                        table_data["Cantidad_Promedio"] = table_data["Cantidad_Promedio"].round(2)
+                    
+                    # Renombrar columnas para mejor presentación
+                    column_names = {
+                        "Codigo": "Código",
+                        "Nombre": "Nombre Producto", 
+                        "ID_Pallet": "ID Pallet",
+                        "Almacen": "Almacén",
+                        "Severidad": "Severidad",
+                        "Dias_Acumulados": "Días Acum.",
+                        "Cantidad_Promedio": "Cant. Promedio",
+                        "Estado": "Estado"
+                    }
+                    table_data = table_data.rename(columns=column_names)
+                    
+                    st.dataframe(table_data, use_container_width=True, height=400)
+                
+                # Tabla de reincidencias usando dataframe nativo
+                if print_reincidencias and not reincidencias.empty:
+                    st.subheader("🔄 Reincidencias Detectadas - Top 15 Casos")
+                    
+                    # Preparar datos de reincidencias para visualización
+                    reincid_display = reincidencias.head(15).copy()
+                    if "Nombre" in reincid_display.columns:
+                        reincid_display["Nombre"] = reincid_display["Nombre"].astype(str).apply(lambda x: x[:30] + "..." if len(str(x)) > 30 else str(x))
+                    if "Fechas" in reincid_display.columns:
+                        reincid_display["Fechas"] = reincid_display["Fechas"].astype(str).apply(lambda x: x[:50] + "..." if len(str(x)) > 50 else str(x))
+                    
+                    # Renombrar columnas
+                    reincid_names = {
+                        "Codigo": "Código",
+                        "Nombre": "Nombre del Producto",
+                        "Almacen": "Almacén", 
+                        "Fechas": "Fechas de Ocurrencia"
+                    }
+                    reincid_display = reincid_display.rename(columns=reincid_names)
+                    
+                    st.dataframe(reincid_display, use_container_width=True, height=300)
+                
+                # Footer del reporte
+                st.markdown(f"""
+                <div style="text-align: center; margin-top: 30px; padding: 20px; border-top: 3px solid #667eea; background: #f8f9ff; border-radius: 10px;">
+                    <h4 style="color: #667eea; margin: 0;">Analizador de Inventarios Negativos v6.0 Web</h4>
+                    <p style="margin: 10px 0;">Reporte generado automáticamente el {datetime.now().strftime('%d/%m/%Y a las %H:%M')}</p>
+                    <p style="margin: 5px 0; font-style: italic; color: #666;">Sistema profesional de análisis con detección de reincidencias y clasificación automática por severidad</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Instrucciones de impresión mejoradas y funcionales
+                st.markdown(f"""
                 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 15px; margin: 25px 0;">
                     <h3 style="margin-top: 0; text-align: center;">🖨️ Instrucciones para Imprimir</h3>
                     <div style="background: rgba(255,255,255,0.15); padding: 20px; border-radius: 10px;">
@@ -1273,14 +1364,14 @@ def main():
                         </ol>
                     </div>
                     <p style="text-align: center; margin: 15px 0 0 0; font-style: italic;">
-                        💡 <strong>Tip:</strong> El reporte se ajusta automáticamente para impresión responsiva en cualquier tamaño de papel
+                        💡 <strong>Tip:</strong> El reporte se imprime tal como lo ves en pantalla
                     </p>
                 </div>
-                ''', unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
                 
-                # Mensaje de éxito
+                # Mensaje de éxito con animación
                 st.balloons()
-                st.success("✅ ¡Vista previa generada exitosamente! Ahora puedes imprimirla siguiendo las instrucciones.")
+                st.success("✅ ¡Vista previa generada exitosamente! La página actual está optimizada para impresión. Usa Ctrl+P para imprimir.")
     
     elif not uploaded_files:
         # Instrucciones de uso
