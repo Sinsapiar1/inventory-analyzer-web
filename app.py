@@ -1043,7 +1043,7 @@ def main():
                 filtros_txt = ", ".join(filtros) if filtros else "Sin filtros aplicados"
                 
                 # CSS y HTML del reporte
-                reporte_html = f'''
+                reporte_html = f"""
                 <style>
                 .print-report {{
                     background: white;
@@ -1142,7 +1142,7 @@ def main():
                     dias_promedio = round(analisis_filtered["Dias_Acumulados"].mean(), 1) if total_pallets > 0 else 0
                     total_negativo = round(analisis_filtered["Cantidad_Suma"].sum(), 0) if total_pallets > 0 else 0
                     
-                    reporte_html += f'''
+                    reporte_html += f"""
                     <div class="section-title">📈 Indicadores Clave de Rendimiento (KPIs)</div>
                     <div class="kpi-grid">
                         <div class="kpi-item">
@@ -1166,12 +1166,12 @@ def main():
                             <small style="color: #666;">Total acumulado</small>
                         </div>
                     </div>
-                    '''
+                    """
                 
                 # Main Table Section
                 if print_table and not analisis_filtered.empty:
                     num_records = min(20, len(analisis_filtered))
-                    reporte_html += f'''
+                    reporte_html += f"""
                     <div class="section-title">📊 Análisis Principal - Top {num_records} Registros Críticos</div>
                     <table class="data-table">
                         <thead>
