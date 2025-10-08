@@ -11,10 +11,10 @@ Aplicación web profesional para análisis avanzado de inventarios negativos con
 - ✅ **Mapa de calor dinámico** sin límite de filas (hasta 100+ pallets)
 - ✅ **Evolución individual** por pallet día a día
 - ✅ **Reportes descargables** (Excel/CSV) con hoja Top N incluida
-- ✅ **Interfaz responsiva** optimizada con mejor espaciado
+- ✅ **Interfaz responsiva** optimizada con mejor espaciado y scroll estable
 - ✅ **Sistema de caché inteligente** para mejor rendimiento
 - ✅ **Desplegable en la nube** con un clic
-- 🔄 **Función de impresión** (en desarrollo - vista previa disponible)
+- ✅ **Descarga de reportes** en Excel/CSV listos para impresión
 
 ## 📋 Estructura del Proyecto
 
@@ -179,19 +179,18 @@ La aplicación espera archivos Excel con la siguiente estructura:
 - Datos Crudos
 - **Top N** (nuevo): Ranking con evolución temporal completa
 
-### Función de Impresión (🔄 En Desarrollo)
-**Estado actual:**
-- ✅ **Vista previa**: Genera vista optimizada para impresión
-- ✅ **Configuración**: Selección de secciones (KPIs, tablas, reincidencias)
-- ✅ **Formato**: Papel A4/Letter, orientación vertical/horizontal
-- 🔄 **Impresión selectiva**: Ctrl+P actualmente imprime toda la página
-- 🎯 **Objetivo**: Imprimir solo la vista previa generada
+### Reportes para Impresión
+**Descargas optimizadas:**
+- ✅ **Excel completo**: Incluye todas las hojas (Activos, Resueltos, Reincidencias, Super Análisis, Top N)
+- ✅ **CSV filtrado**: Exporta solo los datos visibles con filtros aplicados
+- ✅ **Formato profesional**: Reportes listos para abrir e imprimir directamente
+- ✅ **Hoja Top N**: Ranking de pallets más críticos con evolución temporal completa
 
-**Uso actual:**
-1. Configurar secciones a incluir
-2. Generar vista previa (se ve correctamente)
-3. Para imprimir: Usar navegador → Imprimir → Seleccionar manualmente el área
-4. *Próximamente: Impresión automática solo de la vista previa*
+**Recomendación para impresión:**
+1. Descarga el reporte Excel con el botón "📊 Descargar Reporte Excel"
+2. Abre el archivo y selecciona la hoja que necesitas imprimir
+3. Usa Excel para configurar formato de impresión (márgenes, orientación, etc.)
+4. ¡Listo para imprimir con formato profesional!
 
 ## 🔧 Configuración Avanzada
 
@@ -288,18 +287,22 @@ pip install streamlit
 - Asegúrate de que los archivos Excel estén en formato UTF-8
 - Revisa nombres de columnas por caracteres especiales
 
-### 🔄 Problemas Conocidos y Soluciones
+### ✅ Problemas Resueltos (v6.1)
 
-**Función de Impresión:**
-- **Problema**: Ctrl+P imprime toda la página en lugar de solo la vista previa
-- **Estado**: En desarrollo - funcionalidad de vista previa completamente operativa
-- **Solución temporal**: Usar función de impresión del navegador y seleccionar manualmente el área de la vista previa
-- **Próxima actualización**: Implementación de impresión selectiva automática
+**Scroll/Navegación:**
+- ✅ **RESUELTO**: Problema de scroll que movía la pantalla al activar "Solo artículos activos" en Súper Análisis
+- ✅ **Implementado**: Ancla de posición y session_state para mantener el scroll estable
+- ✅ **Mejorado**: Tabs con posición sticky para mejor navegación
+
+**Reportes:**
+- ✅ **SOLUCIONADO**: Función de impresión problemática removida
+- ✅ **ALTERNATIVA**: Descargas de Excel/CSV optimizadas para impresión profesional
+- ✅ **INCLUIDO**: Hoja Top N con formato listo para imprimir
 
 **Responsividad:**
-- ✅ **Solucionado**: Espaciado mejorado entre secciones del Súper Análisis
-- ✅ **Solucionado**: Headers bien posicionados y separados visualmente
-- ✅ **Solucionado**: Métricas muestran "N/A" en lugar de "nan"
+- ✅ **Optimizado**: Espaciado mejorado entre secciones del Súper Análisis
+- ✅ **Estabilizado**: Headers bien posicionados y separados visualmente
+- ✅ **Mejorado**: Métricas muestran "N/A" en lugar de "nan"
 
 **Rendimiento:**
 - ✅ **Optimizado**: Sistema de caché implementado para funciones pesadas
@@ -336,6 +339,13 @@ Para reportar problemas o solicitar funcionalidades:
 
 ## 🔄 Actualizaciones
 
+### v6.1 - Correcciones y Mejoras de Estabilidad (Actual)
+- ✅ **FIX CRÍTICO**: Problema de scroll en Súper Análisis corregido completamente
+- ✅ **Navegación estable**: Implementación de ancla y session_state para evitar saltos de pantalla
+- ✅ **Función de impresión removida**: Reemplazada por descargas optimizadas de Excel/CSV
+- ✅ **Tabs mejorados**: Posición sticky para mejor experiencia de navegación
+- ✅ **UX mejorada**: Sin más refreshes inesperados en filtros del Súper Análisis
+
 ### v6.0 - Migración Web con Súper Análisis
 - ✅ Interfaz web completa con Streamlit
 - ✅ Visualizaciones interactivas con Plotly
@@ -351,21 +361,20 @@ Para reportar problemas o solicitar funcionalidades:
 - ✅ **Sistema de caché inteligente** para mejor rendimiento
 - ✅ **Interfaz responsiva mejorada** con mejor espaciado
 - ✅ **Optimizaciones de despliegue** (dependencias flexibles, caché de funciones)
-- 🔄 **Vista previa de impresión** (funcional, impresión selectiva en desarrollo)
 
 ### Próximas características
-- 🔄 **Impresión selectiva** (solo vista previa, no página completa)
 - 🔄 Base de datos para histórico
 - 🔄 Autenticación de usuarios
 - 🔄 API REST para integración
 - 🔄 Notificaciones automáticas
 - 🔄 Dashboard ejecutivo avanzado
 - 🔄 Exportación de gráficos como imágenes
+- 🔄 Reportes PDF personalizables
 
 ---
 
 **¡Tu aplicación está lista para el mundo! 🌍**
 
 Desarrollado por: [RAUL PIVET]  
-Versión: 6.0 Web  
-Fecha: AGOSTO 2025
+Versión: 6.1 Web (Stable)  
+Última actualización: Octubre 2025
