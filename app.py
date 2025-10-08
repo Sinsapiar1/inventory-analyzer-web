@@ -200,37 +200,128 @@ st.markdown("""
         font-weight: bold;
     }
     
-    /* Estilizado profesional del contenedor de tabs */
+    /* ===== DISEÑO PROFESIONAL DE TABS - GLASSMORPHISM STYLE ===== */
+    
+    /* Contenedor principal de tabs con efecto glassmorphism */
     .stTabs [data-baseweb="tab-list"] {
         position: sticky;
         top: 0;
-        background: linear-gradient(180deg, rgba(248,249,250,0.98) 0%, rgba(255,255,255,0.95) 100%);
-        backdrop-filter: blur(10px);
-        z-index: 99;
-        padding: 15px 0;
-        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.08);
-        border-bottom: 1px solid rgba(102, 126, 234, 0.15);
-        margin-bottom: 10px;
+        background: linear-gradient(145deg, 
+            rgba(102, 126, 234, 0.12) 0%, 
+            rgba(118, 75, 162, 0.08) 50%,
+            rgba(102, 126, 234, 0.12) 100%);
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        z-index: 999;
+        padding: 20px 15px 10px 15px;
+        box-shadow: 
+            0 4px 16px rgba(102, 126, 234, 0.15),
+            0 8px 32px rgba(118, 75, 162, 0.1),
+            inset 0 1px 0 rgba(255, 255, 255, 0.5);
+        border-radius: 0 0 20px 20px;
+        border-bottom: 2px solid rgba(102, 126, 234, 0.3);
+        margin-bottom: 20px;
+        gap: 8px;
     }
     
-    /* Mejorar apariencia de tabs individuales */
+    /* Tabs individuales con diseño moderno */
     .stTabs [data-baseweb="tab"] {
         font-weight: 500;
-        padding: 12px 20px;
-        border-radius: 8px 8px 0 0;
-        transition: all 0.3s ease;
+        font-size: 15px;
+        padding: 14px 24px;
+        margin: 0 4px;
+        border-radius: 12px;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        background: rgba(255, 255, 255, 0.25);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 
+            0 2px 8px rgba(0, 0, 0, 0.05),
+            inset 0 1px 0 rgba(255, 255, 255, 0.5);
+        color: #3a3a3a;
+        position: relative;
+        overflow: hidden;
     }
     
-    /* Tab seleccionado con estilo profesional */
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.05) 100%);
-        border-bottom: 3px solid #667eea;
-        font-weight: 600;
+    /* Efecto de brillo en hover */
+    .stTabs [data-baseweb="tab"]::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, 
+            transparent, 
+            rgba(255, 255, 255, 0.4), 
+            transparent);
+        transition: left 0.5s ease;
     }
     
-    /* Tab en hover */
+    .stTabs [data-baseweb="tab"]:hover::before {
+        left: 100%;
+    }
+    
+    /* Tab en estado hover */
     .stTabs [data-baseweb="tab"]:hover {
-        background: rgba(102, 126, 234, 0.05);
+        background: rgba(255, 255, 255, 0.45);
+        transform: translateY(-2px);
+        box-shadow: 
+            0 4px 16px rgba(102, 126, 234, 0.2),
+            inset 0 1px 0 rgba(255, 255, 255, 0.6);
+        border: 1px solid rgba(102, 126, 234, 0.4);
+    }
+    
+    /* Tab seleccionado - Efecto premium */
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        background: linear-gradient(145deg, 
+            rgba(102, 126, 234, 0.95) 0%, 
+            rgba(118, 75, 162, 0.9) 100%);
+        color: white !important;
+        font-weight: 600;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        box-shadow: 
+            0 6px 20px rgba(102, 126, 234, 0.4),
+            0 2px 8px rgba(118, 75, 162, 0.3),
+            inset 0 1px 0 rgba(255, 255, 255, 0.3),
+            inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+        transform: translateY(-3px);
+    }
+    
+    /* Animación de pulso sutil para tab activo */
+    @keyframes pulse-glow {
+        0%, 100% {
+            box-shadow: 
+                0 6px 20px rgba(102, 126, 234, 0.4),
+                0 2px 8px rgba(118, 75, 162, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        }
+        50% {
+            box-shadow: 
+                0 6px 24px rgba(102, 126, 234, 0.5),
+                0 2px 12px rgba(118, 75, 162, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.4);
+        }
+    }
+    
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        animation: pulse-glow 3s ease-in-out infinite;
+    }
+    
+    /* Indicador visual debajo del tab activo */
+    .stTabs [data-baseweb="tab"][aria-selected="true"]::after {
+        content: '';
+        position: absolute;
+        bottom: -10px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 60%;
+        height: 3px;
+        background: linear-gradient(90deg, 
+            transparent, 
+            rgba(102, 126, 234, 0.8), 
+            transparent);
+        border-radius: 2px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -644,6 +735,95 @@ def main():
     
     # Mostrar resultados si existen datos
     if 'analisis' in st.session_state:
+        # Inyectar JavaScript GLOBAL para scroll estable (se carga una sola vez al inicio)
+        components.html("""
+            <script>
+            (function() {
+                // Función para guardar posición del scroll
+                function saveScrollPosition() {
+                    const scrollPos = window.parent.scrollY || window.parent.pageYOffset;
+                    sessionStorage.setItem('streamlit_scroll_pos', scrollPos);
+                }
+                
+                // Función para restaurar posición del scroll
+                function restoreScrollPosition() {
+                    const savedPos = sessionStorage.getItem('streamlit_scroll_pos');
+                    if (savedPos && savedPos !== '0') {
+                        requestAnimationFrame(function() {
+                            window.parent.scrollTo({
+                                top: parseInt(savedPos),
+                                behavior: 'auto'
+                            });
+                        });
+                    }
+                }
+                
+                // Guardar posición constantemente al hacer scroll
+                let scrollTimeout;
+                window.parent.addEventListener('scroll', function() {
+                    clearTimeout(scrollTimeout);
+                    scrollTimeout = setTimeout(saveScrollPosition, 50);
+                }, { passive: true });
+                
+                // Restaurar posición inmediatamente al cargar
+                restoreScrollPosition();
+                
+                // También restaurar después de un pequeño delay (para asegurar que DOM esté listo)
+                setTimeout(restoreScrollPosition, 100);
+                setTimeout(restoreScrollPosition, 300);
+                setTimeout(restoreScrollPosition, 500);
+                
+                // Detectar cambios en elementos interactivos y guardar posición
+                function attachListeners() {
+                    // Checkboxes
+                    const checkboxes = window.parent.document.querySelectorAll('input[type="checkbox"]');
+                    checkboxes.forEach(function(cb) {
+                        if (!cb.hasScrollListener) {
+                            cb.addEventListener('change', saveScrollPosition);
+                            cb.hasScrollListener = true;
+                        }
+                    });
+                    
+                    // Selectboxes
+                    const selects = window.parent.document.querySelectorAll('select');
+                    selects.forEach(function(sel) {
+                        if (!sel.hasScrollListener) {
+                            sel.addEventListener('change', saveScrollPosition);
+                            sel.hasScrollListener = true;
+                        }
+                    });
+                    
+                    // Input fields
+                    const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                    inputs.forEach(function(inp) {
+                        if (!inp.hasScrollListener) {
+                            inp.addEventListener('focus', saveScrollPosition);
+                            inp.hasScrollListener = true;
+                        }
+                    });
+                }
+                
+                // Adjuntar listeners inmediatamente
+                attachListeners();
+                
+                // Re-adjuntar listeners después de cambios en el DOM
+                setTimeout(attachListeners, 500);
+                setTimeout(attachListeners, 1000);
+                setTimeout(attachListeners, 2000);
+                
+                // Observer para detectar cambios en el DOM y re-adjuntar listeners
+                const observer = new MutationObserver(function(mutations) {
+                    attachListeners();
+                });
+                
+                observer.observe(window.parent.document.body, {
+                    childList: true,
+                    subtree: true
+                });
+            })();
+            </script>
+        """, height=0)
+        
         analisis = st.session_state.analisis
         super_analisis = st.session_state.super_analisis
         reincidencias = st.session_state.reincidencias
@@ -710,43 +890,6 @@ def main():
         
         with tab3:
             st.subheader("Súper Análisis - Evolución Temporal por Pallet")
-            
-            # Inyectar JavaScript para mantener posición del scroll
-            components.html("""
-                <script>
-                // Guardar posición antes de cambios
-                function saveScrollPos() {
-                    sessionStorage.setItem('superAnalisisScroll', window.parent.pageYOffset || window.parent.scrollY);
-                }
-                
-                // Restaurar posición guardada
-                function restoreScrollPos() {
-                    const savedPos = sessionStorage.getItem('superAnalisisScroll');
-                    if (savedPos) {
-                        setTimeout(function() {
-                            window.parent.scrollTo({
-                                top: parseInt(savedPos),
-                                behavior: 'instant'
-                            });
-                        }, 50);
-                    }
-                }
-                
-                // Escuchar eventos de scroll para guardar posición
-                window.parent.addEventListener('scroll', saveScrollPos);
-                
-                // Restaurar al cargar
-                restoreScrollPos();
-                
-                // Detectar clicks en checkboxes y guardar posición
-                setTimeout(function() {
-                    const checkboxes = window.parent.document.querySelectorAll('input[type="checkbox"]');
-                    checkboxes.forEach(function(cb) {
-                        cb.addEventListener('click', saveScrollPos);
-                    });
-                }, 500);
-                </script>
-            """, height=0)
             
             # Controles avanzados para Súper Análisis
             col1, col2, col3, col4 = st.columns(4)
