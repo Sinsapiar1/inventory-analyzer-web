@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -199,21 +200,37 @@ st.markdown("""
         font-weight: bold;
     }
     
-    /* Mejora de estabilidad del scroll - Mantener posición en reruns */
-    #super-analisis-anchor {
-        scroll-margin-top: 100px;
-        display: block;
-        height: 1px;
-        visibility: hidden;
-    }
-    
-    /* Estabilizar el contenedor de tabs */
+    /* Estilizado profesional del contenedor de tabs */
     .stTabs [data-baseweb="tab-list"] {
         position: sticky;
         top: 0;
-        background: white;
+        background: linear-gradient(180deg, rgba(248,249,250,0.98) 0%, rgba(255,255,255,0.95) 100%);
+        backdrop-filter: blur(10px);
         z-index: 99;
-        padding: 10px 0;
+        padding: 15px 0;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.08);
+        border-bottom: 1px solid rgba(102, 126, 234, 0.15);
+        margin-bottom: 10px;
+    }
+    
+    /* Mejorar apariencia de tabs individuales */
+    .stTabs [data-baseweb="tab"] {
+        font-weight: 500;
+        padding: 12px 20px;
+        border-radius: 8px 8px 0 0;
+        transition: all 0.3s ease;
+    }
+    
+    /* Tab seleccionado con estilo profesional */
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.05) 100%);
+        border-bottom: 3px solid #667eea;
+        font-weight: 600;
+    }
+    
+    /* Tab en hover */
+    .stTabs [data-baseweb="tab"]:hover {
+        background: rgba(102, 126, 234, 0.05);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -692,34 +709,61 @@ def main():
             st.dataframe(reincidencias, use_container_width=True, height=400)
         
         with tab3:
-            # Ancla fija para mantener posición del scroll
-            st.markdown('<div id="super-analisis-anchor"></div>', unsafe_allow_html=True)
             st.subheader("Súper Análisis - Evolución Temporal por Pallet")
             
-            # Usar un contenedor específico para evitar saltos de scroll
-            with st.container():
-                # Controles avanzados para Súper Análisis
-                col1, col2, col3, col4 = st.columns(4)
+            # Inyectar JavaScript para mantener posición del scroll
+            components.html("""
+                <script>
+                // Guardar posición antes de cambios
+                function saveScrollPos() {
+                    sessionStorage.setItem('superAnalisisScroll', window.parent.pageYOffset || window.parent.scrollY);
+                }
                 
-                with col1:
-                    buscar_codigo = st.text_input("🔍 Buscar código:", key="buscar_codigo")
+                // Restaurar posición guardada
+                function restoreScrollPos() {
+                    const savedPos = sessionStorage.getItem('superAnalisisScroll');
+                    if (savedPos) {
+                        setTimeout(function() {
+                            window.parent.scrollTo({
+                                top: parseInt(savedPos),
+                                behavior: 'instant'
+                            });
+                        }, 50);
+                    }
+                }
                 
-                with col2:
-                    # Inicializar estado en session_state si no existe
-                    if 'solo_activos_state' not in st.session_state:
-                        st.session_state.solo_activos_state = False
-                    solo_activos = st.checkbox("Solo artículos activos (última fecha)", 
-                                              value=st.session_state.solo_activos_state,
-                                              key="solo_activos")
-                    st.session_state.solo_activos_state = solo_activos
+                // Escuchar eventos de scroll para guardar posición
+                window.parent.addEventListener('scroll', saveScrollPos);
                 
-                with col3:
-                    almacen_super = st.selectbox("Filtrar por almacén:", 
-                        ["Todos"] + list(super_analisis["Almacen"].unique()),
-                        key="almacen_super")
+                // Restaurar al cargar
+                restoreScrollPos();
                 
-                with col4:
-                    mostrar_vacios = st.checkbox("Mostrar celdas vacías como 0", key="mostrar_vacios")
+                // Detectar clicks en checkboxes y guardar posición
+                setTimeout(function() {
+                    const checkboxes = window.parent.document.querySelectorAll('input[type="checkbox"]');
+                    checkboxes.forEach(function(cb) {
+                        cb.addEventListener('click', saveScrollPos);
+                    });
+                }, 500);
+                </script>
+            """, height=0)
+            
+            # Controles avanzados para Súper Análisis
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                buscar_codigo = st.text_input("🔍 Buscar código:", key="buscar_codigo")
+            
+            with col2:
+                solo_activos = st.checkbox("Solo artículos activos (última fecha)", key="solo_activos")
+            
+            with col3:
+                almacen_super = st.selectbox("Filtrar por almacén:", 
+                    ["Todos"] + list(super_analisis["Almacen"].unique()),
+                    key="almacen_super")
+            
+            with col4:
+                mostrar_vacios = st.checkbox("Mostrar celdas vacías como 0", key="mostrar_vacios")
             
             # Filtros adicionales en expandible
             with st.expander("🔧 Filtros Avanzados"):
