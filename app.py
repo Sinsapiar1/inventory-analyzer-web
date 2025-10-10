@@ -667,7 +667,20 @@ def create_top_n_sheet(writer, super_analisis, analisis, top_n):
         worksheet.set_column(len(cols_base), len(cols_base) + len(date_cols) - 1, 10)
 
 # INTERFAZ PRINCIPAL
+# INTERFAZ PRINCIPAL
 def main():
+    # Microsoft Clarity Analytics
+    clarity_code = """
+    <script type="text/javascript">
+        (function(c,l,a,r,i,t,y){
+            c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+            t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+            y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+        })(window, document, "clarity", "script", "to2uo8wmzr");
+    </script>
+    """
+    components.html(clarity_code, height=0)
+    
     # Header
     st.markdown("""
     <div class="main-header">
