@@ -1383,11 +1383,31 @@ Visita el blog para:
 
 ## 📄 Licencia
 
-Este proyecto es propiedad de **[TU EMPRESA/NOMBRE]**.
+Este proyecto está licenciado bajo la **MIT License** - una de las licencias open source más populares y permisivas.
 
-**Todos los derechos reservados.**
+### ¿Qué significa esto?
 
-Para uso comercial o redistribución, contacta al desarrollador.
+✅ **Puedes:**
+- Usar el código comercialmente
+- Modificar el código
+- Distribuir el código
+- Usar el código en proyectos privados
+- Sublicenciar
+
+⚠️ **Solo debes:**
+- Incluir el aviso de copyright y la licencia en las copias
+
+📄 **Texto completo:** Ver archivo [LICENSE](LICENSE)
+
+---
+
+### ¿Por qué MIT License?
+
+- ✅ **Gratuita:** No cuesta nada
+- ✅ **Simple:** Fácil de entender
+- ✅ **Popular:** Usada por proyectos como React, Node.js, Rails
+- ✅ **Permisiva:** Pocas restricciones para los usuarios
+- ✅ **Protección:** Incluye descargo de responsabilidad legal
 
 ---
 
