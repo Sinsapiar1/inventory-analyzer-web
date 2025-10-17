@@ -752,17 +752,24 @@ def preprocess_erp_raw_data(file_content, filename, sheet_index=0):
         df_negativos["Almacen"] = df_negativos["Almacen"].astype(str)
         df_negativos["Nombre"] = df_negativos["Nombre"].astype(str)
 
+        # Convertir Codigo y ID_Pallet a enteros (como en archivos antiguos)
+        df_negativos["Codigo"] = pd.to_numeric(df_negativos["Codigo"], errors='coerce').fillna(0).astype(int)
+        df_negativos["ID_Pallet"] = pd.to_numeric(df_negativos["ID_Pallet"], errors='coerce').fillna(0).astype(int)
+
         # Si hay columna Disponible, agregarla
         if "Disponible" not in df_negativos.columns:
             df_negativos["Disponible"] = df_negativos["Inventario_Fisico"]
 
-        # Renombrar columnas al formato final esperado
+        # Renombrar columnas al formato final esperado (igual a archivos antiguos)
         df_final = df_negativos.rename(columns={
-            "Inventario_Fisico": "Inventario Físico"
+            "Codigo": "Código",
+            "ID_Pallet": "ID de Pallet",
+            "Inventario_Fisico": "Inventario Físico",
+            "Almacen": "Almacén"
         })
 
-        # Seleccionar solo columnas necesarias
-        final_columns = ["Codigo", "Nombre", "Almacen", "ID_Pallet", "Inventario Físico", "Disponible"]
+        # Seleccionar solo columnas necesarias con nombres exactos de archivos antiguos
+        final_columns = ["Código", "Nombre", "Almacén", "ID de Pallet", "Inventario Físico", "Disponible"]
         df_final = df_final[[col for col in final_columns if col in df_final.columns]]
 
         # Estadísticas
@@ -859,11 +866,11 @@ def export_preprocessed_report(df_procesado, stats, fecha_suffix=None):
             worksheet_stats.set_column('A:A', 35)
             worksheet_stats.set_column('B:B', 25)
 
-            # === HOJA 2: Datos procesados ===
-            df_procesado.to_excel(writer, sheet_name="Datos", index=False)
+            # === HOJA 2: Datos procesados (nombre igual a archivos antiguos) ===
+            df_procesado.to_excel(writer, sheet_name="Inventario Completo (Actual)", index=False)
 
             # Formatear hoja de datos
-            worksheet_data = writer.sheets["Datos"]
+            worksheet_data = writer.sheets["Inventario Completo (Actual)"]
 
             header_format = workbook.add_format({
                 'bold': True,
