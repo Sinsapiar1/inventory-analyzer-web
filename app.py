@@ -999,9 +999,9 @@ def main():
                     st.write(f"- **Total inventario físico**: {stats['total_inventario_fisico']:,.2f}")
 
                     # Distribución por almacén
-                    if 'Almacen' in df_procesado.columns:
+                    if 'Almacén' in df_procesado.columns:
                         st.markdown("### Distribución por Almacén")
-                        almacen_counts = df_procesado['Almacen'].value_counts()
+                        almacen_counts = df_procesado['Almacén'].value_counts()
                         st.bar_chart(almacen_counts)
 
                 # Botón de descarga
