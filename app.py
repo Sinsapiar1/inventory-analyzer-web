@@ -1575,40 +1575,40 @@ def main():
                 else:
                     st.warning("No hay datos que coincidan con los filtros aplicados.")
         
-        with tab4:
-            st.subheader("Datos Crudos Procesados")
-            st.dataframe(df_total, use_container_width=True, height=400)
-        
-        # Descarga de reporte
-        st.subheader("💾 Descargar Reporte")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            excel_buffer = generate_excel_report(analisis, super_analisis, reincidencias, df_total, top_n)
-            st.download_button(
-                label="📊 Descargar Reporte Excel",
-                data=excel_buffer,
-                file_name=f"Reporte_Inventarios_Negativos_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        
-        with col2:
-            csv_data = analisis.to_csv(index=False)
-            st.download_button(
-                label="📄 Descargar CSV",
-                data=csv_data,
-                file_name=f"Analisis_Pallets_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv"
-            )
-        
-        # Nota informativa sobre reportes
-        st.markdown("---")
-        st.info("""
-        💡 **Tip de Reportes:** 
-        - Utiliza los botones de descarga de Excel o CSV arriba para obtener reportes completos y formateados
-        - El reporte Excel incluye múltiples hojas con análisis detallados, incluyendo la hoja "Top N" con evolución temporal
-        - Los archivos descargados son ideales para impresión y análisis offline
-        """)
+            with tab4:
+                st.subheader("Datos Crudos Procesados")
+                st.dataframe(df_total, use_container_width=True, height=400)
+            
+            # Descarga de reporte
+            st.subheader("💾 Descargar Reporte")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                excel_buffer = generate_excel_report(analisis, super_analisis, reincidencias, df_total, top_n)
+                st.download_button(
+                    label="📊 Descargar Reporte Excel",
+                    data=excel_buffer,
+                    file_name=f"Reporte_Inventarios_Negativos_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            
+            with col2:
+                csv_data = analisis.to_csv(index=False)
+                st.download_button(
+                    label="📄 Descargar CSV",
+                    data=csv_data,
+                    file_name=f"Analisis_Pallets_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv"
+                )
+            
+            # Nota informativa sobre reportes
+            st.markdown("---")
+            st.info("""
+            💡 **Tip de Reportes:** 
+            - Utiliza los botones de descarga de Excel o CSV arriba para obtener reportes completos y formateados
+            - El reporte Excel incluye múltiples hojas con análisis detallados, incluyendo la hoja "Top N" con evolución temporal
+            - Los archivos descargados son ideales para impresión y análisis offline
+            """)
 
         if not uploaded_files:
             # Instrucciones de uso
