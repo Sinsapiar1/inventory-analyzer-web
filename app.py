@@ -78,6 +78,10 @@ def normalize_dataframe(df):
         df["Nombre"] = ""
     if "Almacen" not in df.columns:
         df["Almacen"] = "N/A"
+
+    # Convertir Almacen y Nombre a string para evitar problemas de tipos mixtos
+    df["Almacen"] = df["Almacen"].astype(str)
+    df["Nombre"] = df["Nombre"].astype(str)
     
     # Cantidad negativa
     if "Cantidad_Negativa" not in df.columns:
@@ -491,6 +495,9 @@ def create_charts(analisis, super_analisis, top_n=10):
     # 3. Distribución por Almacén
     almacen_totals = {}
     for almacen in super_analisis["Almacen"].dropna().unique():
+        # Filtrar valores NaN, "nan", "N/A" y vacíos
+        if pd.isna(almacen) or str(almacen).lower() in ['nan', 'n/a', 'none', '']:
+            continue
         subset = super_analisis[super_analisis["Almacen"] == almacen]
         total_almacen = subset[date_cols].sum().sum(skipna=True) if date_cols else 0
         if total_almacen != 0:
@@ -740,6 +747,10 @@ def preprocess_erp_raw_data(file_content, filename, sheet_index=0):
                     .str.split(".").str[0]
                     .str.strip()
                 )
+
+        # Convertir Almacen y Nombre a string para evitar problemas de tipos mixtos
+        df_negativos["Almacen"] = df_negativos["Almacen"].astype(str)
+        df_negativos["Nombre"] = df_negativos["Nombre"].astype(str)
 
         # Si hay columna Disponible, agregarla
         if "Disponible" not in df_negativos.columns:
