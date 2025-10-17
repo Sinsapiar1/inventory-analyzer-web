@@ -1239,11 +1239,11 @@ def main():
             
             col1, col2 = st.columns(2)
             with col1:
-                st.plotly_chart(fig1, width='stretch')
-                st.plotly_chart(fig3, width='stretch')
+                st.plotly_chart(fig1, use_container_width=True)
+                st.plotly_chart(fig3, use_container_width=True)
             with col2:
-                st.plotly_chart(fig2, width='stretch')
-                st.plotly_chart(fig4, width='stretch')
+                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig4, use_container_width=True)
             
             # Tablas de datos
             tab1, tab2, tab3, tab4 = st.tabs(["📊 Análisis Principal", "🔄 Reincidencias", "📈 Súper Análisis", "📋 Datos Crudos"])
@@ -1423,7 +1423,7 @@ def main():
                                 )
                                 fig_evo.update_traces(line_color="#ff4444", line_width=3)
                                 fig_evo.update_layout(height=350)
-                                st.plotly_chart(fig_evo, width='stretch')
+                                st.plotly_chart(fig_evo, use_container_width=True)
                         
                         with col2:
                             # Gráfico 2: Distribución por almacén de datos filtrados
@@ -1447,7 +1447,7 @@ def main():
                                     title="Distribución por Almacén (Filtrado)"
                                 )
                                 fig_almacen.update_layout(height=350)
-                                st.plotly_chart(fig_almacen, width='stretch')
+                                st.plotly_chart(fig_almacen, use_container_width=True)
                         
                         # Gráfico 3: MAPA DE CALOR EXPANDIDO - SIN LÍMITE DE FILAS
                         if len(date_cols) > 1:
@@ -1500,7 +1500,7 @@ def main():
                                     aspect="auto"
                                 )
                                 fig_heat.update_layout(height=height_map)
-                                st.plotly_chart(fig_heat, width='stretch')
+                                st.plotly_chart(fig_heat, use_container_width=True)
                                 
                                 st.info(f"Mostrando {len(heatmap_data)} de {len(super_filtered)} pallets filtrados")
                         
@@ -1574,7 +1574,7 @@ def main():
                                 )
                             )
 
-                            st.plotly_chart(fig_lines, width='stretch')
+                            st.plotly_chart(fig_lines, use_container_width=True)
 
                             # Información adicional
                             st.info(f"Cada línea representa la evolución diaria de un pallet específico. " +
