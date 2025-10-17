@@ -127,10 +127,13 @@ La aplicación presenta un sistema de tabs con **diseño glassmorphism premium**
 
 ```
 inventory-analyzer-web/
-├── app.py                          # Aplicación Streamlit principal (1,200+ líneas)
+├── app.py                          # Aplicación Streamlit principal (1,600+ líneas)
 ├── requirements.txt                # Dependencias de Python
 ├── config.toml                     # Configuración de Streamlit (tema personalizado)
 ├── README.md                       # Esta documentación completa
+├── LICENSE_EN.md                   # Licencia MIT en inglés
+├── LICENSE_ES.md                   # Licencia MIT en español
+├── CLAUDE.md                       # Instrucciones para Claude Code
 ├── CHANGELOG_v6.1.md               # Historial de cambios v6.1
 ├── MEJORAS_v6.2_PREMIUM.md         # Documentación técnica v6.2 (505 líneas)
 ├── RESUMEN_CORRECCIONES.md         # Resumen de correcciones aplicadas
@@ -306,6 +309,50 @@ Puedes cambiar esto en la barra lateral:
 ---
 
 ## 🎯 Guía de Uso Completa
+
+### 🆕 Modo de Operación: Preprocesador de Datos ERP
+
+La aplicación ahora incluye dos modos de operación principales:
+
+#### 📥 **Preprocesar Datos ERP**
+Transforma archivos Excel crudos del ERP al formato requerido para el análisis.
+
+**Características:**
+- ✅ Filtrado automático de inventarios negativos
+- ✅ Filtrado por ID de pallet válido
+- ✅ Normalización de nombres de columnas
+- ✅ Conversión de tipos de datos
+- ✅ Generación de archivo compatible con el analizador
+- ✅ Vista previa de datos procesados
+- ✅ Estadísticas detalladas del filtrado
+- ✅ Gráfico de distribución por almacén
+
+**Cómo usar:**
+1. Selecciona **"📥 Preprocesar Datos ERP"** en la barra lateral
+2. Sube el archivo crudo del ERP (formato Excel)
+3. Configura la hoja a procesar (índice 0-10)
+4. Selecciona la fecha del reporte
+5. Visualiza la vista previa y estadísticas
+6. Descarga el archivo procesado
+7. Usa el archivo descargado en el modo "📊 Analizar Inventarios"
+
+**Columnas requeridas en archivo ERP:**
+- Código de artículo / Código
+- Nombre del producto / Nombre
+- Almacén
+- Id de pallet / ID de Pallet
+- Inventario físico
+- Física disponible (opcional)
+
+#### 📊 **Analizar Inventarios**
+Modo original de análisis con reportes ya formateados.
+
+**Uso recomendado:**
+- Archivos procesados por el preprocesador
+- Archivos históricos ya en formato correcto
+- Múltiples archivos para análisis temporal
+
+---
 
 ### 1. Subir y Procesar Archivos
 
@@ -1383,11 +1430,31 @@ Visita el blog para:
 
 ## 📄 Licencia
 
-Este proyecto es propiedad de **[TU EMPRESA/NOMBRE]**.
+Este proyecto está licenciado bajo la **Licencia MIT**.
 
-**Todos los derechos reservados.**
+**Copyright (c) 2025 Raúl Pivet Álvarez**
 
-Para uso comercial o redistribución, contacta al desarrollador.
+- 📄 [Licencia en Inglés (LICENSE_EN.md)](LICENSE_EN.md)
+- 📄 [Licencia en Español (LICENSE_ES.md)](LICENSE_ES.md)
+
+### Resumen de la Licencia MIT
+
+✅ **Permitido:**
+- Uso comercial
+- Modificación del código
+- Distribución
+- Uso privado
+- Sublicenciamiento
+
+⚠️ **Condiciones:**
+- Incluir aviso de copyright
+- Incluir copia de la licencia
+
+❌ **Limitaciones:**
+- Sin garantía
+- Sin responsabilidad del autor
+
+Para más detalles, consulta los archivos de licencia completos.
 
 ---
 
@@ -1431,10 +1498,11 @@ streamlit run app.py
 
 ---
 
-**Desarrollado por:** RAUL PIVET  
-**Versión:** 6.2 Premium Edition  
-**Última actualización:** Octubre 2025  
+**Desarrollado por:** Raúl Pivet Álvarez
+**Versión:** 6.2 Premium Edition
+**Última actualización:** Octubre 2025
 **Estado:** ✅ Producción Estable
+**Licencia:** MIT License
 
 ---
 
