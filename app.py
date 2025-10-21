@@ -120,20 +120,51 @@ def analyze_pallets_data(df_total):
     
     analisis["Dias_Acumulados"] = (analisis["Ultima_Aparicion"] - analisis["Primera_Aparicion"]).dt.days + 1
     
-    # Severidad por magnitud del negativo
+    # Severidad por magnitud del negativo - Versión robusta
     magnitudes = np.abs(analisis["Cantidad_Promedio"])
-    if len(magnitudes) > 0 and magnitudes.nunique() > 1:
-        q25, q50, q75 = np.percentile(magnitudes, [25, 50, 75])
-    else:
-        v = magnitudes.iloc[0] if len(magnitudes) > 0 else 0
-        q25 = q50 = q75 = v
     
-    analisis["Severidad"] = pd.cut(
-        magnitudes,
-        bins=[-1, q25, q50, q75, float("inf")],
-        labels=["Bajo", "Medio", "Alto", "Crítico"],
-        include_lowest=True
-    )
+    if len(magnitudes) == 0:
+        # Sin datos
+        analisis["Severidad"] = pd.Series(dtype="category")
+    elif magnitudes.nunique() == 1:
+        # Todos los valores son iguales
+        analisis["Severidad"] = "Medio"
+    elif len(magnitudes) < 4:
+        # Muy pocos datos: categorización simple
+        median_val = magnitudes.median()
+        analisis["Severidad"] = magnitudes.apply(
+            lambda x: "Crítico" if x > median_val else "Bajo"
+        )
+    else:
+        # Suficientes datos: categorización completa
+        try:
+            # Intentar con percentiles
+            q25, q50, q75 = np.percentile(magnitudes, [25, 50, 75])
+            
+            # Verificar si hay bins únicos suficientes
+            bins = [-1, q25, q50, q75, float("inf")]
+            unique_bins = sorted(set(bins))
+            
+            if len(unique_bins) < 3:
+                # No hay suficientes bins únicos, usar categorización simple
+                median_val = magnitudes.median()
+                analisis["Severidad"] = magnitudes.apply(
+                    lambda x: "Alto" if x > median_val * 1.5 else ("Medio" if x > median_val else "Bajo")
+                )
+            else:
+                # Usar pd.qcut que maneja automáticamente los duplicados
+                analisis["Severidad"] = pd.qcut(
+                    magnitudes,
+                    q=[0, 0.25, 0.5, 0.75, 1.0],
+                    labels=["Bajo", "Medio", "Alto", "Crítico"],
+                    duplicates='drop'
+                )
+        except Exception:
+            # Si todo falla, usar categorización simple por mediana
+            median_val = magnitudes.median()
+            analisis["Severidad"] = magnitudes.apply(
+                lambda x: "Alto" if x > median_val * 1.5 else ("Medio" if x > median_val else "Bajo")
+            )
     
     # Estado (activo/resuelto)
     fecha_ultimo = df_total["Fecha_Reporte"].max()
