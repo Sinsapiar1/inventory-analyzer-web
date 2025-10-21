@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 import warnings
 from pathlib import Path
 import zipfile
+import sqlite3
+import re
 
 warnings.filterwarnings("ignore")
 
@@ -146,7 +148,7 @@ def analyze_pallets_data(df_total):
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Analizador de Inventarios Negativos v6.1 Web",
+    page_title="Analizador de Inventarios Negativos v6.3 Database Edition",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -898,13 +900,288 @@ def export_preprocessed_report(df_procesado, stats, fecha_suffix=None):
     except Exception as e:
         return None, None, False, str(e)
 
+# ========== NUEVAS FUNCIONES PARA MANEJO DE BASE DE DATOS ==========
+
+def extract_date_from_filename(filename):
+    """
+    Extrae la fecha del nombre del archivo
+    Formato esperado: reporte_all_YYYYMMDD_HHMMSS.xlsx
+    """
+    try:
+        # Buscar patrón de fecha YYYYMMDD
+        pattern = r'(\d{8})'
+        match = re.search(pattern, filename)
+        if match:
+            fecha_str = match.group(1)
+            fecha = datetime.strptime(fecha_str, "%Y%m%d")
+            return fecha
+        else:
+            # Si no encuentra fecha, usa fecha actual
+            return datetime.now()
+    except Exception as e:
+        return datetime.now()
+
+@st.cache_data
+def convert_excels_to_db(uploaded_files, sheet_index=1, progress_callback=None):
+    """
+    Convierte múltiples archivos Excel a una base de datos SQLite
+    
+    Args:
+        uploaded_files: Lista de archivos Excel cargados
+        sheet_index: Índice de la hoja a leer (por defecto 1 = segunda hoja)
+        progress_callback: Función opcional para reportar progreso
+    
+    Returns:
+        buffer: BytesIO con el archivo .db
+        stats: Diccionario con estadísticas de conversión
+        success: Boolean indicando si tuvo éxito
+        error: Mensaje de error si falló
+    """
+    try:
+        # Crear conexión a base de datos en memoria
+        conn = sqlite3.connect(':memory:')
+        cursor = conn.cursor()
+        
+        # Crear tabla para almacenar inventarios
+        cursor.execute('''
+            CREATE TABLE inventarios_negativos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo TEXT,
+                nombre TEXT,
+                almacen TEXT,
+                id_pallet TEXT,
+                cantidad_negativa REAL,
+                disponible REAL,
+                fecha_reporte DATE,
+                archivo_origen TEXT,
+                fecha_extraccion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Crear índices para mejorar rendimiento
+        cursor.execute('CREATE INDEX idx_fecha ON inventarios_negativos(fecha_reporte)')
+        cursor.execute('CREATE INDEX idx_codigo ON inventarios_negativos(codigo)')
+        cursor.execute('CREATE INDEX idx_pallet ON inventarios_negativos(id_pallet)')
+        
+        total_registros = 0
+        archivos_procesados = 0
+        archivos_error = 0
+        errores_detalle = []
+        
+        for i, uploaded_file in enumerate(uploaded_files):
+            try:
+                if progress_callback:
+                    progress_callback(f"Procesando {i+1}/{len(uploaded_files)}: {uploaded_file.name}")
+                
+                # Leer archivo Excel
+                file_content = uploaded_file.read()
+                
+                # Extraer fecha del nombre del archivo
+                fecha_reporte = extract_date_from_filename(uploaded_file.name)
+                
+                # Leer la hoja especificada
+                df = pd.read_excel(io.BytesIO(file_content), sheet_name=sheet_index)
+                
+                # Normalizar nombres de columnas (similar a la lógica existente)
+                df = df.rename(columns={
+                    "Código": "Codigo",
+                    "Código Producto": "Codigo",
+                    "ID de Pallet": "ID_Pallet",
+                    "Inventario Físico": "Cantidad_Negativa",
+                    "Nombre": "Nombre",
+                    "Descripción": "Nombre",
+                    "Almacén": "Almacen",
+                    "Almacen": "Almacen",
+                    "Disponible": "Disponible",
+                    "Física disponible": "Disponible"
+                })
+                
+                # Verificar columnas esenciales
+                columnas_requeridas = ["Codigo", "ID_Pallet", "Cantidad_Negativa"]
+                if not all(col in df.columns for col in columnas_requeridas):
+                    errores_detalle.append(f"{uploaded_file.name}: Faltan columnas requeridas")
+                    archivos_error += 1
+                    continue
+                
+                # Limpiar datos
+                for col in ["Codigo", "ID_Pallet"]:
+                    if col in df.columns:
+                        df[col] = (
+                            df[col]
+                            .astype(str)
+                            .str.replace(",", "", regex=False)
+                            .str.split(".").str[0]
+                            .str.strip()
+                        )
+                
+                # Asegurar que existen columnas opcionales
+                if "Nombre" not in df.columns:
+                    df["Nombre"] = ""
+                if "Almacen" not in df.columns:
+                    df["Almacen"] = "N/A"
+                if "Disponible" not in df.columns:
+                    df["Disponible"] = df["Cantidad_Negativa"]
+                
+                # Convertir a string para evitar problemas de tipos
+                df["Almacen"] = df["Almacen"].astype(str)
+                df["Nombre"] = df["Nombre"].astype(str)
+                
+                # Convertir cantidad a numérico
+                df["Cantidad_Negativa"] = pd.to_numeric(df["Cantidad_Negativa"], errors="coerce").fillna(0)
+                
+                # Filtrar solo negativos
+                df_negativos = df[df["Cantidad_Negativa"] < 0].copy()
+                
+                if len(df_negativos) == 0:
+                    if progress_callback:
+                        progress_callback(f"  ⚠️ {uploaded_file.name}: Sin registros negativos")
+                    continue
+                
+                # Preparar datos para inserción
+                df_negativos["fecha_reporte"] = fecha_reporte.strftime("%Y-%m-%d")
+                df_negativos["archivo_origen"] = uploaded_file.name
+                
+                # Insertar en base de datos
+                for _, row in df_negativos.iterrows():
+                    cursor.execute('''
+                        INSERT INTO inventarios_negativos 
+                        (codigo, nombre, almacen, id_pallet, cantidad_negativa, disponible, fecha_reporte, archivo_origen)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        str(row.get("Codigo", "")),
+                        str(row.get("Nombre", "")),
+                        str(row.get("Almacen", "N/A")),
+                        str(row.get("ID_Pallet", "")),
+                        float(row.get("Cantidad_Negativa", 0)),
+                        float(row.get("Disponible", 0)),
+                        row["fecha_reporte"],
+                        row["archivo_origen"]
+                    ))
+                
+                total_registros += len(df_negativos)
+                archivos_procesados += 1
+                
+                if progress_callback:
+                    progress_callback(f"  ✅ {uploaded_file.name}: {len(df_negativos)} registros agregados")
+                
+            except Exception as e:
+                archivos_error += 1
+                errores_detalle.append(f"{uploaded_file.name}: {str(e)}")
+                if progress_callback:
+                    progress_callback(f"  ❌ Error en {uploaded_file.name}: {str(e)}")
+                continue
+        
+        conn.commit()
+        
+        # Guardar base de datos en archivo temporal
+        temp_db_path = '/tmp/consolidated_inventory.db'
+        disk_conn = sqlite3.connect(temp_db_path)
+        
+        # Copiar base de datos en memoria a archivo en disco
+        conn.backup(disk_conn)
+        disk_conn.close()
+        conn.close()
+        
+        # Leer archivo y guardar en buffer
+        buffer = io.BytesIO()
+        with open(temp_db_path, 'rb') as f:
+            buffer.write(f.read())
+        
+        buffer.seek(0)
+        
+        # Limpiar archivo temporal
+        Path(temp_db_path).unlink(missing_ok=True)
+        
+        # Estadísticas
+        stats = {
+            "total_archivos": len(uploaded_files),
+            "archivos_procesados": archivos_procesados,
+            "archivos_error": archivos_error,
+            "total_registros": total_registros,
+            "errores_detalle": errores_detalle,
+            "fecha_creacion": datetime.now()
+        }
+        
+        return buffer, stats, True, None
+        
+    except Exception as e:
+        return None, None, False, str(e)
+
+def read_db_file(db_file_content):
+    """
+    Lee un archivo .db y retorna DataFrame similar al proceso de Excel
+    
+    Args:
+        db_file_content: Contenido del archivo .db
+    
+    Returns:
+        df: DataFrame con los datos
+        success: Boolean
+        error: Mensaje de error si falló
+    """
+    try:
+        # Guardar contenido en archivo temporal
+        temp_db_path = '/tmp/temp_inventory.db'
+        with open(temp_db_path, 'wb') as f:
+            f.write(db_file_content)
+        
+        # Conectar a base de datos
+        conn = sqlite3.connect(temp_db_path)
+        
+        # Leer datos
+        query = '''
+            SELECT 
+                codigo as Codigo,
+                nombre as Nombre,
+                almacen as Almacen,
+                id_pallet as ID_Pallet,
+                cantidad_negativa as Cantidad_Negativa,
+                fecha_reporte as Fecha_Reporte,
+                archivo_origen as Archivo_Origen
+            FROM inventarios_negativos
+            ORDER BY fecha_reporte, codigo
+        '''
+        
+        df = pd.read_sql_query(query, conn)
+        
+        # Convertir fecha_reporte a datetime
+        df["Fecha_Reporte"] = pd.to_datetime(df["Fecha_Reporte"])
+        
+        # Cerrar conexión
+        conn.close()
+        
+        # Limpiar archivo temporal
+        Path(temp_db_path).unlink(missing_ok=True)
+        
+        return df, True, None
+        
+    except Exception as e:
+        return None, False, str(e)
+
+def save_db_to_file(buffer, filename=None):
+    """
+    Prepara el archivo .db para descarga
+    
+    Args:
+        buffer: BytesIO con contenido de la DB
+        filename: Nombre del archivo (opcional)
+    
+    Returns:
+        buffer: Buffer listo para descarga
+        filename: Nombre del archivo
+    """
+    if filename is None:
+        filename = f"inventarios_consolidados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    
+    return buffer, filename
+
 # INTERFAZ PRINCIPAL
 def main():
     # Header
     st.markdown("""
     <div class="main-header">
-        <h1>📊 Analizador de Inventarios Negativos v6.2 Web</h1>
-        <p>Premium Edition - Con preprocesador ERP integrado</p>
+        <h1>📊 Analizador de Inventarios Negativos v6.3 Database Edition</h1>
+        <p>Premium Edition - Con consolidación de datos y preprocesador ERP integrado</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -912,8 +1189,13 @@ def main():
     st.sidebar.title("🎯 Modo de Operación")
     modo = st.sidebar.radio(
         "Selecciona el modo:",
-        ["📥 Preprocesar Datos ERP", "📊 Analizar Inventarios"],
-        help="Preprocesar: Transforma datos crudos del ERP | Analizar: Procesa reportes ya formateados"
+        [
+            "📥 Preprocesar Datos ERP", 
+            "📊 Analizar Inventarios",
+            "🗄️ Consolidar Excel → Base de Datos",
+            "💾 Analizar desde Base de Datos"
+        ],
+        help="Preprocesar: Transforma datos crudos del ERP | Analizar: Procesa reportes ya formateados | Consolidar: Convierte múltiples Excel a .db | Analizar DB: Lee desde archivo .db"
     )
 
     st.sidebar.markdown("---")
@@ -1053,6 +1335,297 @@ def main():
                 - Id de pallet
                 - Inventario físico
                 """)
+
+    # ========== MODO 3: CONSOLIDAR EXCEL → BASE DE DATOS ==========
+    elif modo == "🗄️ Consolidar Excel → Base de Datos":
+        st.subheader("🗄️ Consolidar Múltiples Excel en Base de Datos")
+        st.info("""
+        **Este módulo consolida múltiples archivos Excel históricos en un solo archivo .db**
+
+        **Proceso:**
+        1. Sube todos los archivos Excel que deseas consolidar (100+)
+        2. El sistema extrae automáticamente:
+           - ✅ Datos de la segunda hoja "Inventario Completo (Actual)"
+           - ✅ Fecha del nombre del archivo (formato: reporte_all_YYYYMMDD)
+           - ✅ Solo registros con inventario negativo
+        3. Genera un archivo .db consolidado descargable
+        4. Puedes agregar más archivos Excel más tarde usando el modo "💾 Analizar desde Base de Datos"
+        """)
+
+        # Upload de archivos Excel
+        excel_files = st.file_uploader(
+            "📁 Subir archivos Excel para consolidar",
+            type=['xlsx', 'xls'],
+            accept_multiple_files=True,
+            help="Selecciona todos los archivos Excel históricos que deseas consolidar",
+            key="consolidate_uploader"
+        )
+
+        # Configuración
+        col1, col2 = st.columns(2)
+        with col1:
+            sheet_idx_consolidate = st.number_input(
+                "📋 Índice de hoja a procesar",
+                min_value=0,
+                max_value=10,
+                value=1,
+                help="0 = primera hoja, 1 = segunda hoja (por defecto 'Inventario Completo (Actual)')"
+            )
+
+        with col2:
+            db_filename = st.text_input(
+                "💾 Nombre del archivo .db",
+                value=f"inventarios_consolidados_{datetime.now().strftime('%Y%m%d')}.db",
+                help="Nombre del archivo de base de datos a generar"
+            )
+
+        if excel_files:
+            st.markdown("---")
+            st.subheader(f"📊 Consolidando {len(excel_files)} archivos")
+
+            # Botón para procesar
+            if st.button("🚀 Iniciar Consolidación", type="primary", use_container_width=True):
+                progress_placeholder = st.empty()
+                log_placeholder = st.empty()
+                
+                logs = []
+                
+                def progress_callback(message):
+                    logs.append(f"{datetime.now().strftime('%H:%M:%S')} - {message}")
+                    log_placeholder.text('\n'.join(logs[-10:]))  # Mostrar últimas 10 líneas
+                
+                with st.spinner("Procesando archivos..."):
+                    buffer, stats, success, error = convert_excels_to_db(
+                        excel_files,
+                        sheet_idx_consolidate,
+                        progress_callback
+                    )
+                
+                if success and buffer is not None:
+                    st.success("✅ Consolidación completada exitosamente!")
+                    
+                    # Mostrar estadísticas
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Total Archivos", stats['total_archivos'])
+                    with col2:
+                        st.metric("Procesados", stats['archivos_procesados'], 
+                                delta=None if stats['archivos_procesados'] == stats['total_archivos'] else f"-{stats['archivos_error']}")
+                    with col3:
+                        st.metric("Con Errores", stats['archivos_error'])
+                    with col4:
+                        st.metric("Total Registros", stats['total_registros'])
+                    
+                    # Mostrar errores si los hay
+                    if stats['errores_detalle']:
+                        with st.expander("⚠️ Ver detalles de errores"):
+                            for error_msg in stats['errores_detalle']:
+                                st.warning(error_msg)
+                    
+                    st.markdown("---")
+                    st.subheader("💾 Descargar Base de Datos Consolidada")
+                    
+                    # Preparar descarga
+                    st.download_button(
+                        label="📥 Descargar Archivo .db",
+                        data=buffer.getvalue(),
+                        file_name=db_filename,
+                        mime="application/x-sqlite3",
+                        use_container_width=True
+                    )
+                    
+                    st.success(f"""
+                    ✅ **Archivo listo para descarga**: `{db_filename}`
+
+                    **Siguiente paso:**
+                    1. Descarga este archivo .db
+                    2. Cambia al modo "💾 Analizar desde Base de Datos"
+                    3. Sube este archivo .db para realizar análisis temporal
+                    4. También puedes agregar más archivos Excel a esta base de datos más tarde
+                    """)
+                else:
+                    st.error(f"❌ Error en la consolidación: {error}")
+
+    # ========== MODO 4: ANALIZAR DESDE BASE DE DATOS ==========
+    elif modo == "💾 Analizar desde Base de Datos":
+        st.subheader("💾 Analizar Inventarios desde Base de Datos")
+        st.info("""
+        **Este módulo analiza inventarios desde un archivo .db consolidado**
+
+        **Ventajas:**
+        - ✅ Carga más rápida que múltiples Excel
+        - ✅ Todos los datos históricos en un solo archivo
+        - ✅ Mismo análisis que el modo Excel
+        - ✅ Puedes agregar más datos Excel a la DB existente
+        """)
+
+        # Upload del archivo .db
+        db_file = st.file_uploader(
+            "📁 Subir archivo .db consolidado",
+            type=['db', 'sqlite', 'sqlite3'],
+            help="Archivo de base de datos generado en el modo 'Consolidar Excel → Base de Datos'",
+            key="db_analyzer_uploader"
+        )
+
+        # Opción para agregar más Excel a la DB
+        add_more_excel = st.checkbox(
+            "➕ Agregar más archivos Excel a esta base de datos",
+            help="Permite agregar nuevos archivos Excel al archivo .db existente"
+        )
+
+        if add_more_excel and db_file:
+            additional_files = st.file_uploader(
+                "📁 Archivos Excel adicionales",
+                type=['xlsx', 'xls'],
+                accept_multiple_files=True,
+                help="Archivos Excel nuevos para agregar a la base de datos",
+                key="additional_excel_uploader"
+            )
+            
+            if additional_files:
+                st.info(f"Se agregarán {len(additional_files)} archivos adicionales a la base de datos")
+
+        # Sidebar para configuración
+        with st.sidebar:
+            st.header("⚙️ Configuración")
+            
+            # Configuraciones (igual que el modo Excel)
+            top_n = st.slider("🔝 Top N para análisis", 5, 50, 10)
+            
+            # Filtros
+            st.subheader("🔍 Filtros")
+            filter_almacen = st.selectbox("Almacén", ["Todos"] +
+                (list(st.session_state.get('analisis', pd.DataFrame()).get('Almacen', pd.Series()).unique())
+                 if 'analisis' in st.session_state else []))
+
+            filter_severidad = st.selectbox("Severidad", ["Todas", "Crítico", "Alto", "Medio", "Bajo"])
+            filter_estado = st.selectbox("Estado", ["Todos", "Activo", "Resuelto"])
+
+            # Botón de análisis
+            analyze_button_db = st.button("🚀 Ejecutar Análisis desde DB", type="primary", use_container_width=True)
+
+        # Contenido principal
+        if analyze_button_db and db_file:
+            try:
+                # Leer contenido del archivo .db
+                db_content = db_file.read()
+                
+                # Leer datos desde la base de datos
+                with st.spinner("Leyendo base de datos..."):
+                    df_total, success, error = read_db_file(db_content)
+                
+                if not success or df_total is None:
+                    st.error(f"❌ Error al leer la base de datos: {error}")
+                else:
+                    # Normalizar datos (usar la función existente)
+                    analyzer = InventoryAnalyzerWeb()
+                    progress_placeholder = st.empty()
+                    st.session_state.progress_placeholder = progress_placeholder
+                    
+                    df_total_normalized = analyzer.normalize_data(df_total)
+                    
+                    # Si hay archivos adicionales, procesarlos y agregarlos
+                    if add_more_excel and 'additional_files' in locals() and additional_files:
+                        with st.spinner("Procesando archivos adicionales..."):
+                            df_additional = analyzer.process_uploaded_files(additional_files)
+                            df_total_normalized = pd.concat([df_total_normalized, df_additional], ignore_index=True)
+                            st.success(f"✅ Agregados {len(additional_files)} archivos Excel adicionales")
+                    
+                    # Continuar con el análisis normal
+                    with st.spinner("Analizando datos..."):
+                        analisis = analyzer.analyze_pallets(df_total_normalized)
+                        super_analisis = analyzer.create_super_analysis(df_total_normalized)
+                        reincidencias = analyzer.detect_recurrences(df_total_normalized)
+
+                        # Guardar en session state
+                        st.session_state.df_total = df_total_normalized
+                        st.session_state.analisis = analisis
+                        st.session_state.super_analisis = super_analisis
+                        st.session_state.reincidencias = reincidencias
+
+                    progress_placeholder.success("✅ Análisis completado desde base de datos!")
+
+            except Exception as e:
+                st.error(f"❌ Error en el análisis: {e}")
+                import traceback
+                st.error(traceback.format_exc())
+
+        # Mostrar resultados si existen datos (reutilizar la lógica del modo Excel)
+        if 'analisis' in st.session_state and analyze_button_db:
+            # Aquí se reutiliza toda la lógica de visualización del modo Excel
+            # Inyectar JavaScript GLOBAL para scroll estable (igual que en modo Excel)
+            components.html("""
+                <script>
+                (function() {
+                    function saveScrollPosition() {
+                        const scrollPos = window.parent.scrollY || window.parent.pageYOffset;
+                        sessionStorage.setItem('streamlit_scroll_pos', scrollPos);
+                    }
+                    
+                    function restoreScrollPosition() {
+                        const savedPos = sessionStorage.getItem('streamlit_scroll_pos');
+                        if (savedPos && savedPos !== '0') {
+                            requestAnimationFrame(function() {
+                                window.parent.scrollTo({
+                                    top: parseInt(savedPos),
+                                    behavior: 'auto'
+                                });
+                            });
+                        }
+                    }
+                    
+                    let scrollTimeout;
+                    window.parent.addEventListener('scroll', function() {
+                        clearTimeout(scrollTimeout);
+                        scrollTimeout = setTimeout(saveScrollPosition, 50);
+                    }, { passive: true });
+                    
+                    restoreScrollPosition();
+                    setTimeout(restoreScrollPosition, 100);
+                    setTimeout(restoreScrollPosition, 300);
+                    setTimeout(restoreScrollPosition, 500);
+                })();
+                </script>
+            """, height=0)
+            
+            # Usar las mismas visualizaciones que el modo Excel
+            analisis = st.session_state.analisis
+            super_analisis = st.session_state.super_analisis
+            reincidencias = st.session_state.reincidencias
+            df_total = st.session_state.df_total
+            
+            # Aplicar filtros
+            analisis_filtered = analisis.copy()
+            if filter_almacen != "Todos":
+                analisis_filtered = analisis_filtered[analisis_filtered["Almacen"] == filter_almacen]
+            if filter_severidad != "Todas":
+                analisis_filtered = analisis_filtered[analisis_filtered["Severidad"] == filter_severidad]
+            if filter_estado != "Todos":
+                analisis_filtered = analisis_filtered[analisis_filtered["Estado"] == filter_estado]
+            
+            # KPIs principales
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Pallets", len(analisis_filtered))
+            with col2:
+                activos = (analisis_filtered["Estado"] == "Activo").sum()
+                st.metric("Activos Hoy", activos)
+            with col3:
+                dias_prom = round(analisis_filtered["Dias_Acumulados"].mean(), 1) if len(analisis_filtered) > 0 else 0
+                st.metric("Días Promedio", dias_prom)
+            with col4:
+                total_negativo = round(analisis_filtered["Cantidad_Suma"].sum(), 0)
+                st.metric("Total Negativo", f"{total_negativo:,.0f}")
+            
+            st.info("🎉 **Análisis desde Base de Datos**: Todos los gráficos y tablas mostrados a continuación provienen de tu archivo .db consolidado")
+            
+            # Nota sobre la fuente de datos
+            st.success(f"""
+            📊 **Fuente de datos**: Base de datos consolidada  
+            📅 **Registros totales**: {len(df_total):,}  
+            🗓️ **Rango de fechas**: {df_total['Fecha_Reporte'].min().strftime('%Y-%m-%d')} a {df_total['Fecha_Reporte'].max().strftime('%Y-%m-%d')}
+            """)
 
     # ========== MODO 2: ANÁLISIS DE INVENTARIOS (ORIGINAL) ==========
     else:
@@ -1631,7 +2204,7 @@ def main():
         if not uploaded_files:
             # Instrucciones de uso
             st.info("""
-            👋 **Bienvenido al Analizador de Inventarios Negativos v6.1 Web**
+            👋 **Bienvenido al Analizador de Inventarios Negativos v6.3 Database Edition**
             
             Para comenzar:
             1. 📁 Sube uno o más archivos Excel en la barra lateral
@@ -1647,9 +2220,12 @@ def main():
             - ✅ Reportes descargables listos para imprimir
             - ✅ Interfaz responsiva y optimizada
             
-            **Nuevo en v6.1:**
-            - 🔧 Navegación mejorada sin saltos de pantalla
-            - 🎯 Experiencia de usuario más fluida
+            **Nuevo en v6.3:**
+            - 🗄️ Consolidación de múltiples Excel en base de datos .db
+            - 💾 Análisis directo desde archivos .db
+            - ➕ Agregar nuevos Excel a .db existente
+            - 📅 Extracción automática de fechas del nombre de archivo
+            - 🚀 Preparado para integración con ERP del área de sistemas
             """)
 
 if __name__ == "__main__":
