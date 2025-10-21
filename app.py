@@ -1699,7 +1699,119 @@ def main():
             
             with tab3:
                 st.subheader("Súper Análisis - Evolución Temporal por Pallet")
-                st.info("💡 Esta vista muestra la evolución temporal de cada pallet. Usa los filtros para explorar los datos.")
+                
+                # Controles avanzados para Súper Análisis
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    buscar_codigo_db = st.text_input("🔍 Buscar código:", key="buscar_codigo_db")
+                
+                with col2:
+                    solo_activos_db = st.checkbox("Solo artículos activos (última fecha)", key="solo_activos_db")
+                
+                with col3:
+                    almacen_super_db = st.selectbox("Filtrar por almacén:", 
+                        ["Todos"] + list(super_analisis["Almacen"].unique()),
+                        key="almacen_super_db")
+                
+                with col4:
+                    mostrar_vacios_db = st.checkbox("Mostrar celdas vacías como 0", key="mostrar_vacios_db")
+                
+                # Filtros adicionales en expandible
+                with st.expander("🔧 Filtros Avanzados"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        codigos_excluir_super_db = st.text_area(
+                            "Códigos a EXCLUIR (separados por comas):",
+                            key="codigos_excluir_super_db",
+                            height=60
+                        )
+                    
+                    with col2:
+                        codigos_incluir_super_db = st.text_area(
+                            "Solo INCLUIR códigos (separados por comas):",
+                            key="codigos_incluir_super_db", 
+                            height=60
+                        )
+                    
+                    # Filtro por rango de fechas
+                    date_cols_db = [c for c in super_analisis.columns if isinstance(c, pd.Timestamp)]
+                    if date_cols_db:
+                        fecha_inicio_db = st.selectbox("Desde fecha:", [None] + sorted(date_cols_db), key="fecha_inicio_db")
+                        fecha_fin_db = st.selectbox("Hasta fecha:", [None] + sorted(date_cols_db), key="fecha_fin_db")
+                
+                # Aplicar filtros al súper análisis
+                super_filtered_db = super_analisis.copy()
+                date_cols_db = [c for c in super_analisis.columns if isinstance(c, pd.Timestamp)]
+                
+                # Filtro por búsqueda de código
+                if buscar_codigo_db:
+                    mask = super_filtered_db["Codigo"].astype(str).str.contains(buscar_codigo_db, case=False, na=False)
+                    super_filtered_db = super_filtered_db[mask]
+                
+                # Filtro por almacén
+                if almacen_super_db != "Todos":
+                    super_filtered_db = super_filtered_db[super_filtered_db["Almacen"] == almacen_super_db]
+                
+                # Filtro códigos a excluir
+                if codigos_excluir_super_db.strip():
+                    codigos_excl = [c.strip() for c in codigos_excluir_super_db.split(",") if c.strip()]
+                    super_filtered_db = super_filtered_db[~super_filtered_db["Codigo"].astype(str).isin(codigos_excl)]
+                
+                # Filtro solo incluir códigos
+                if codigos_incluir_super_db.strip():
+                    codigos_incl = [c.strip() for c in codigos_incluir_super_db.split(",") if c.strip()]
+                    super_filtered_db = super_filtered_db[super_filtered_db["Codigo"].astype(str).isin(codigos_incl)]
+                
+                # Filtro solo activos (tienen valor en última fecha)
+                if solo_activos_db and date_cols_db:
+                    ultima_fecha = max(date_cols_db)
+                    super_filtered_db = super_filtered_db[super_filtered_db[ultima_fecha].notna() & (super_filtered_db[ultima_fecha] != 0)]
+                
+                # Filtro por rango de fechas
+                if date_cols_db and 'fecha_inicio_db' in locals() and 'fecha_fin_db' in locals() and fecha_inicio_db and fecha_fin_db:
+                    cols_to_show = ["Codigo", "Nombre", "ID_Pallet", "Almacen"]
+                    date_range = [d for d in sorted(date_cols_db) if fecha_inicio_db <= d <= fecha_fin_db]
+                    super_filtered_db = super_filtered_db[cols_to_show + date_range]
+                    date_cols_db = date_range  # Actualizar date_cols para gráficos
+                
+                # Mostrar información de filtrado
+                st.info(f"📋 **Mostrando {len(super_filtered_db)} de {len(super_analisis)} registros** con los filtros aplicados")
+                
+                # Procesar datos para visualización
+                if mostrar_vacios_db:
+                    super_display_db = super_filtered_db.fillna(0)
+                else:
+                    super_display_db = super_filtered_db.fillna("")
+                
+                # Función para colorear celdas
+                def colorear_super_analisis_db(val):
+                    if pd.isna(val) or val == "" or val == 0:
+                        return ""
+                    elif isinstance(val, (int, float)) and val < 0:
+                        intensity = min(abs(val) / 100, 1.0)
+                        alpha = 0.3 + (intensity * 0.5)
+                        return f"background-color: rgba(255, 68, 68, {alpha}); color: white; font-weight: bold;"
+                    return ""
+                
+                # Aplicar estilo y mostrar tabla
+                if not super_display_db.empty:
+                    styled_super_db = super_display_db.style.applymap(colorear_super_analisis_db)
+                    st.dataframe(styled_super_db, width='stretch', height=500)
+                    
+                    # Botón de descarga específico del súper análisis filtrado
+                    st.markdown("---")
+                    csv_super_db = super_display_db.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Descargar Súper Análisis Filtrado (CSV)",
+                        data=csv_super_db,
+                        file_name=f"Super_Analisis_DB_Filtrado_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                        mime="text/csv",
+                        help="Descarga los datos filtrados actualmente mostrados en formato CSV"
+                    )
+                else:
+                    st.warning("No hay datos que coincidan con los filtros aplicados.")
             
             with tab4:
                 st.subheader("Datos Crudos Procesados")
