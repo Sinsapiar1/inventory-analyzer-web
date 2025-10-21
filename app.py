@@ -134,7 +134,8 @@ def analyze_pallets_data(df_total):
         magnitudes,
         bins=[-1, q25, q50, q75, float("inf")],
         labels=["Bajo", "Medio", "Alto", "Crítico"],
-        include_lowest=True
+        include_lowest=True,
+        duplicates='drop'
     )
     
     # Estado (activo/resuelto)
@@ -1550,7 +1551,7 @@ def main():
                 st.error(traceback.format_exc())
 
         # Mostrar resultados si existen datos (reutilizar la lógica del modo Excel)
-        if 'analisis' in st.session_state and analyze_button_db:
+        if 'analisis' in st.session_state:
             # Aquí se reutiliza toda la lógica de visualización del modo Excel
             # Inyectar JavaScript GLOBAL para scroll estable (igual que en modo Excel)
             components.html("""
@@ -1634,10 +1635,10 @@ def main():
 
             # Upload de archivos
             uploaded_files = st.file_uploader(
-                "📁 Subir archivos Excel",
-                type=['xlsx', 'xls'],
+                "📁 Subir archivos Excel o Base de Datos (.db)",
+                type=['xlsx', 'xls', 'db', 'sqlite', 'sqlite3'],
                 accept_multiple_files=True,
-                help="Selecciona uno o más reportes de inventario en formato Excel"
+                help="Selecciona archivos Excel o un archivo .db consolidado"
             )
 
             # Configuraciones
@@ -1667,8 +1668,40 @@ def main():
                 st.session_state.progress_placeholder = progress_placeholder
 
                 with st.spinner("Procesando archivos..."):
-                    # Procesar datos
-                    df_total = analyzer.process_uploaded_files(uploaded_files)
+                    # Separar archivos .db de archivos Excel
+                    db_files = [f for f in uploaded_files if f.name.endswith(('.db', '.sqlite', '.sqlite3'))]
+                    excel_files = [f for f in uploaded_files if f.name.endswith(('.xlsx', '.xls'))]
+                    
+                    all_dataframes = []
+                    
+                    # Procesar archivos .db si hay
+                    if db_files:
+                        for db_file in db_files:
+                            analyzer.log(f"Leyendo base de datos: {db_file.name}")
+                            db_content = db_file.read()
+                            df_from_db, success, error = read_db_file(db_content)
+                            
+                            if success and df_from_db is not None:
+                                all_dataframes.append(df_from_db)
+                                analyzer.log(f"✅ {db_file.name}: {len(df_from_db)} registros")
+                            else:
+                                analyzer.log(f"❌ Error en {db_file.name}: {error}")
+                    
+                    # Procesar archivos Excel si hay
+                    if excel_files:
+                        df_from_excel = analyzer.process_uploaded_files(excel_files)
+                        all_dataframes.append(df_from_excel)
+                    
+                    # Combinar todos los datos
+                    if all_dataframes:
+                        df_total = pd.concat(all_dataframes, ignore_index=True)
+                    else:
+                        raise ValueError("No se pudieron procesar archivos válidos")
+                    
+                    # Normalizar datos
+                    df_total = analyzer.normalize_data(df_total)
+                    
+                    # Continuar con análisis
                     analisis = analyzer.analyze_pallets(df_total)
                     super_analisis = analyzer.create_super_analysis(df_total)
                     reincidencias = analyzer.detect_recurrences(df_total)
@@ -1679,10 +1712,18 @@ def main():
                     st.session_state.super_analisis = super_analisis
                     st.session_state.reincidencias = reincidencias
 
-                progress_placeholder.success("✅ Análisis completado!")
+                # Mensaje de éxito personalizado
+                if db_files and excel_files:
+                    progress_placeholder.success(f"✅ Análisis completado: {len(db_files)} archivo(s) .db + {len(excel_files)} archivo(s) Excel")
+                elif db_files:
+                    progress_placeholder.success(f"✅ Análisis completado desde {len(db_files)} archivo(s) .db")
+                else:
+                    progress_placeholder.success("✅ Análisis completado!")
 
             except Exception as e:
                 st.error(f"❌ Error en el análisis: {e}")
+                import traceback
+                st.error(traceback.format_exc())
                 return
 
         # Mostrar resultados si existen datos
@@ -2206,7 +2247,7 @@ def main():
             👋 **Bienvenido al Analizador de Inventarios Negativos v6.3 Database Edition**
             
             Para comenzar:
-            1. 📁 Sube uno o más archivos Excel en la barra lateral
+            1. 📁 Sube archivos Excel **o** un archivo .db en la barra lateral
             2. ⚙️ Configura los parámetros de análisis
             3. 🚀 Haz clic en "Ejecutar Análisis"
             4. 📊 Explora los resultados y descarga reportes
@@ -2220,8 +2261,9 @@ def main():
             - ✅ Interfaz responsiva y optimizada
             
             **Nuevo en v6.3:**
-            - 🗄️ Consolidación de múltiples Excel en base de datos .db
-            - 💾 Análisis directo desde archivos .db
+            - 🗄️ Acepta archivos Excel **Y** archivos .db
+            - 💾 Puedes combinar archivos .db + Excel en el mismo análisis
+            - 🗄️ Consolida múltiples Excel en base de datos .db
             - ➕ Agregar nuevos Excel a .db existente
             - 📅 Extracción automática de fechas del nombre de archivo
             - 🚀 Preparado para integración con ERP del área de sistemas
