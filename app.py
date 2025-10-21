@@ -1255,13 +1255,15 @@ def main():
         # Configuración
         col1, col2 = st.columns(2)
         with col1:
-            sheet_idx_erp = st.number_input(
-                "📋 Índice de hoja a procesar",
-                min_value=0,
+            sheet_number_erp = st.number_input(
+                "📋 Número de hoja a procesar",
+                min_value=1,
                 max_value=10,
-                value=0,
-                help="0 = primera hoja, 1 = segunda hoja, etc."
+                value=1,
+                help="La hoja del Excel donde están los datos (1 = primera hoja, 2 = segunda hoja, etc.)"
             )
+            # Convertir a índice (restar 1 porque Python usa índices base 0)
+            sheet_idx_erp = sheet_number_erp - 1
 
         with col2:
             fecha_manual = st.date_input(
@@ -1374,12 +1376,15 @@ def main():
 
         **Proceso:**
         1. Sube todos los archivos Excel que deseas consolidar (100+)
-        2. El sistema extrae automáticamente:
-           - ✅ Datos de la segunda hoja "Inventario Completo (Actual)"
+        2. Selecciona el número de hoja donde están los datos (por defecto: **Hoja 2** = "Inventario Completo (Actual)")
+        3. El sistema extrae automáticamente:
+           - ✅ Datos de la hoja seleccionada
            - ✅ Fecha del nombre del archivo (formato: reporte_all_YYYYMMDD)
            - ✅ Solo registros con inventario negativo
-        3. Genera un archivo .db consolidado descargable
-        4. Puedes agregar más archivos Excel más tarde usando el modo "💾 Analizar desde Base de Datos"
+        4. Genera un archivo .db consolidado descargable
+        5. Puedes agregar más archivos Excel más tarde usando el modo "💾 Analizar desde Base de Datos"
+        
+        **Nota:** Si tus datos están en una hoja diferente, cambia el "Número de hoja a procesar" abajo.
         """)
 
         # Upload de archivos Excel
@@ -1394,13 +1399,15 @@ def main():
         # Configuración
         col1, col2 = st.columns(2)
         with col1:
-            sheet_idx_consolidate = st.number_input(
-                "📋 Índice de hoja a procesar",
-                min_value=0,
+            sheet_number = st.number_input(
+                "📋 Número de hoja a procesar",
+                min_value=1,
                 max_value=10,
-                value=1,
-                help="0 = primera hoja, 1 = segunda hoja (por defecto 'Inventario Completo (Actual)')"
+                value=2,
+                help="La hoja del Excel donde están los datos (por defecto: 2 = 'Inventario Completo (Actual)')"
             )
+            # Convertir a índice (restar 1 porque Python usa índices base 0)
+            sheet_idx_consolidate = sheet_number - 1
 
         with col2:
             db_filename = st.text_input(
@@ -1673,7 +1680,13 @@ def main():
 
             # Configuraciones
             top_n = st.slider("🔝 Top N para análisis", 5, 50, 10)
-            sheet_index = st.number_input("📋 Índice de hoja Excel", 0, 10, 1)
+            sheet_number_analyze = st.number_input(
+                "📋 Número de hoja Excel", 
+                1, 10, 2,
+                help="La hoja del Excel donde están los datos (2 = 'Inventario Completo (Actual)')"
+            )
+            # Convertir a índice
+            sheet_index = sheet_number_analyze - 1
 
             # Filtros
             st.subheader("🔍 Filtros")
