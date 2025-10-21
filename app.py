@@ -1655,14 +1655,77 @@ def main():
                 total_negativo = round(analisis_filtered["Cantidad_Suma"].sum(), 0)
                 st.metric("Total Negativo", f"{total_negativo:,.0f}")
             
-            st.info("🎉 **Análisis desde Base de Datos**: Todos los gráficos y tablas mostrados a continuación provienen de tu archivo .db consolidado")
-            
             # Nota sobre la fuente de datos
             st.success(f"""
-            📊 **Fuente de datos**: Base de datos consolidada  
+            🗄️ **Fuente de datos**: Base de datos consolidada  
             📅 **Registros totales**: {len(df_total):,}  
             🗓️ **Rango de fechas**: {df_total['Fecha_Reporte'].min().strftime('%Y-%m-%d')} a {df_total['Fecha_Reporte'].max().strftime('%Y-%m-%d')}
             """)
+            
+            # Gráficos
+            st.subheader("📈 Visualizaciones")
+            fig1, fig2, fig3, fig4 = create_charts(analisis_filtered, super_analisis, top_n)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.plotly_chart(fig1, use_container_width=True)
+                st.plotly_chart(fig3, use_container_width=True)
+            with col2:
+                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig4, use_container_width=True)
+            
+            # Tablas de datos
+            tab1, tab2, tab3, tab4 = st.tabs(["📊 Análisis Principal", "🔄 Reincidencias", "📈 Súper Análisis", "📋 Datos Crudos"])
+            
+            with tab1:
+                st.subheader("Problemas por Severidad")
+                
+                # Formatear columna de severidad con colores
+                def format_severity(val):
+                    colors = {
+                        "Crítico": "background-color: #ff4444; color: white",
+                        "Alto": "background-color: #ff9800; color: white", 
+                        "Medio": "background-color: #ffb74d; color: black",
+                        "Bajo": "background-color: #81c784; color: black"
+                    }
+                    return colors.get(val, "")
+                
+                styled_analisis = analisis_filtered.style.applymap(format_severity, subset=['Severidad'])
+                st.dataframe(styled_analisis, width='stretch', height=400)
+            
+            with tab2:
+                st.subheader("Reincidencias Detectadas")
+                st.dataframe(reincidencias, width='stretch', height=400)
+            
+            with tab3:
+                st.subheader("Súper Análisis - Evolución Temporal por Pallet")
+                st.info("💡 Esta vista muestra la evolución temporal de cada pallet. Usa los filtros para explorar los datos.")
+            
+            with tab4:
+                st.subheader("Datos Crudos Procesados")
+                st.dataframe(df_total, width='stretch', height=400)
+            
+            # Descarga de reporte
+            st.subheader("💾 Descargar Reporte")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                excel_buffer = generate_excel_report(analisis, super_analisis, reincidencias, df_total, top_n)
+                st.download_button(
+                    label="📊 Descargar Reporte Excel",
+                    data=excel_buffer,
+                    file_name=f"Reporte_Inventarios_DB_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            
+            with col2:
+                csv_data = analisis.to_csv(index=False)
+                st.download_button(
+                    label="📄 Descargar CSV",
+                    data=csv_data,
+                    file_name=f"Analisis_DB_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv"
+                )
 
     # ========== MODO 2: ANÁLISIS DE INVENTARIOS (ORIGINAL) ==========
     else:
