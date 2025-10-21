@@ -1800,6 +1800,212 @@ def main():
                     styled_super_db = super_display_db.style.applymap(colorear_super_analisis_db)
                     st.dataframe(styled_super_db, width='stretch', height=500)
                     
+                    # Estadísticas rápidas
+                    st.markdown("---")
+                    st.markdown("#### 📊 Estadísticas de la Vista Actual")
+                    
+                    if date_cols_db:
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            total_neg_db = super_display_db[date_cols_db].select_dtypes(include=[np.number]).sum().sum()
+                            st.metric("Total Negativo", f"{total_neg_db:,.0f}", help="Suma total de valores negativos visibles")
+                        
+                        with col2:
+                            pallets_activos_db = len(super_filtered_db) if solo_activos_db else len(super_filtered_db[super_filtered_db[date_cols_db].iloc[:, -1].notna()])
+                            st.metric("Pallets en Vista", pallets_activos_db, help="Número de pallets mostrados con los filtros aplicados")
+                        
+                        with col3:
+                            promedio_neg_db = super_display_db[date_cols_db].select_dtypes(include=[np.number]).mean().mean()
+                            promedio_display_db = f"{promedio_neg_db:.1f}" if pd.notna(promedio_neg_db) else "N/A"
+                            st.metric("Promedio por Celda", promedio_display_db, help="Promedio de valores en las celdas visibles")
+                    
+                    # GRÁFICOS DINÁMICOS
+                    st.markdown("---")
+                    st.markdown("### 📈 Análisis Visual de Datos Filtrados")
+                    st.markdown("Visualizaciones interactivas basadas en los datos filtrados mostrados arriba")
+                    
+                    # Crear gráficos solo si hay datos con fechas
+                    if date_cols_db and len(super_filtered_db) > 0:
+                        
+                        # Gráfico 1 y 2: Evolución Total + Distribución por Almacén
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Sumar por fecha todos los valores filtrados
+                            evolution_data_db = []
+                            for fecha in sorted(date_cols_db):
+                                columna = pd.to_numeric(super_display_db[fecha], errors='coerce')
+                                total = columna.sum(skipna=True)
+                                if pd.notna(total) and total != 0:
+                                    evolution_data_db.append({"Fecha": fecha, "Total": abs(total)})
+                            
+                            if evolution_data_db:
+                                evo_df_db = pd.DataFrame(evolution_data_db)
+                                fig_evo_db = px.line(
+                                    evo_df_db, 
+                                    x="Fecha", 
+                                    y="Total",
+                                    title="Evolución Total (Datos Filtrados)",
+                                    markers=True
+                                )
+                                fig_evo_db.update_traces(line_color="#ff4444", line_width=3)
+                                fig_evo_db.update_layout(height=350)
+                                st.plotly_chart(fig_evo_db, use_container_width=True)
+                        
+                        with col2:
+                            # Distribución por almacén de datos filtrados
+                            almacen_data_db = {}
+                            for almacen in super_filtered_db["Almacen"].unique():
+                                if pd.notna(almacen):
+                                    subset = super_display_db[super_display_db["Almacen"] == almacen]
+                                    total = 0
+                                    for fecha in date_cols_db:
+                                        columna_numerica = pd.to_numeric(subset[fecha], errors='coerce')
+                                        total += columna_numerica.sum(skipna=True)
+                                    
+                                    if total != 0:
+                                        almacen_data_db[almacen] = abs(total)
+                            
+                            if almacen_data_db:
+                                fig_almacen_db = px.pie(
+                                    values=list(almacen_data_db.values()),
+                                    names=list(almacen_data_db.keys()),
+                                    title="Distribución por Almacén (Filtrado)"
+                                )
+                                fig_almacen_db.update_layout(height=350)
+                                st.plotly_chart(fig_almacen_db, use_container_width=True)
+                        
+                        # Gráfico 3: MAPA DE CALOR EXPANDIDO
+                        if len(date_cols_db) > 1:
+                            st.subheader("🔥 Mapa de Calor - Evolución por Pallet (Expandido)")
+                            
+                            # Control de filas para mapa de calor
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.write("Controla cuántos pallets mostrar en el mapa de calor:")
+                            with col2:
+                                opciones_heat_db = [10, 20, 30, 50, 100]
+                                if len(super_filtered_db) not in opciones_heat_db:
+                                    opciones_heat_db.append(len(super_filtered_db))
+                                opciones_heat_db = sorted([x for x in opciones_heat_db if x <= len(super_filtered_db)])
+                                
+                                max_rows_heat_db = st.selectbox(
+                                    "Pallets:", 
+                                    options=opciones_heat_db,
+                                    index=min(2, len(opciones_heat_db) - 1),
+                                    key="max_rows_heatmap_db"
+                                )
+                            
+                            # Preparar datos para heatmap
+                            super_filtered_copy_db = super_filtered_db.copy()
+                            super_filtered_copy_db['Codigo_Pallet'] = (super_filtered_copy_db['Codigo'].astype(str) + 
+                                                                  '_' + super_filtered_copy_db['ID_Pallet'].astype(str))
+                            
+                            # Tomar las filas seleccionadas
+                            super_heat_db = super_filtered_copy_db.head(max_rows_heat_db)
+                            heatmap_data_db = super_heat_db.set_index('Codigo_Pallet')[date_cols_db].copy()
+                            
+                            # Convertir a numérico
+                            for col in heatmap_data_db.columns:
+                                heatmap_data_db[col] = pd.to_numeric(heatmap_data_db[col], errors='coerce')
+                            
+                            # Limpiar datos
+                            heatmap_data_db = heatmap_data_db.dropna(how='all').fillna(0)
+                            
+                            if not heatmap_data_db.empty:
+                                # Altura dinámica según número de filas
+                                height_map_db = max(500, len(heatmap_data_db) * 25)
+                                
+                                fig_heat_db = px.imshow(
+                                    heatmap_data_db.values,
+                                    labels=dict(x="Fecha", y="Código_Pallet", color="Cantidad"),
+                                    x=[d.strftime("%m/%d") for d in sorted(date_cols_db)],
+                                    y=heatmap_data_db.index,
+                                    title=f"Mapa de Calor - {len(heatmap_data_db)} Pallets Filtrados",
+                                    color_continuous_scale="RdBu_r",
+                                    aspect="auto"
+                                )
+                                fig_heat_db.update_layout(height=height_map_db)
+                                st.plotly_chart(fig_heat_db, use_container_width=True)
+                                
+                                st.info(f"Mostrando {len(heatmap_data_db)} de {len(super_filtered_db)} pallets filtrados")
+                        
+                        # Gráfico 4: EVOLUCIÓN INDIVIDUAL
+                        if len(super_filtered_db) >= 1:
+                            st.subheader("📈 Evolución Individual por Pallet")
+                            
+                            # Control para líneas de evolución
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.write("Líneas de evolución individual (comportamiento día a día):")
+                            with col2:
+                                max_lines_db = st.selectbox(
+                                    "Líneas:", 
+                                    options=list(range(1, min(16, len(super_filtered_db) + 1))),
+                                    index=min(4, len(super_filtered_db) - 1),
+                                    key="max_lines_evolution_db"
+                                )
+                            
+                            # Tomar los primeros N pallets
+                            pallets_to_show_db = super_filtered_db.head(max_lines_db)
+                            
+                            # Crear gráfico de líneas múltiples
+                            fig_lines_db = go.Figure()
+                            
+                            colors_db = px.colors.qualitative.Set1[:max_lines_db]
+                            
+                            for idx, (_, row) in enumerate(pallets_to_show_db.iterrows()):
+                                codigo_pallet = str(row["Codigo"]) + "_" + str(row["ID_Pallet"])
+
+                                # Extraer valores y fechas válidas
+                                valores = []
+                                fechas_validas = []
+
+                                for fecha in sorted(date_cols_db):
+                                    valor = row[fecha]
+                                    try:
+                                        valor_num = pd.to_numeric(valor, errors='coerce')
+                                        if pd.notna(valor_num) and valor_num != 0:
+                                            valores.append(valor_num)
+                                            fechas_validas.append(fecha)
+                                    except:
+                                        continue
+
+                                # Agregar línea si hay datos
+                                if valores and fechas_validas:
+                                    fig_lines_db.add_trace(go.Scatter(
+                                        x=fechas_validas,
+                                        y=valores,
+                                        mode='lines+markers',
+                                        name=codigo_pallet,
+                                        line=dict(width=3, color=colors_db[idx % len(colors_db)]),
+                                        marker=dict(size=6),
+                                        hovertemplate="<b>%{fullData.name}</b><br>" +
+                                                    "Fecha: %{x}<br>" +
+                                                    "Cantidad: %{y}<br>" +
+                                                    "<extra></extra>"
+                                    ))
+
+                            fig_lines_db.update_layout(
+                                title=f"Comportamiento Diario Individual - {max_lines_db} Pallets",
+                                xaxis_title="Fecha",
+                                yaxis_title="Cantidad Negativa",
+                                height=450,
+                                hovermode='x unified',
+                                legend=dict(
+                                    yanchor="top",
+                                    y=0.99,
+                                    xanchor="left",
+                                    x=1.01
+                                )
+                            )
+
+                            st.plotly_chart(fig_lines_db, use_container_width=True)
+
+                            st.info(f"Cada línea representa la evolución diaria de un pallet específico. " +
+                                   f"Mostrando {max_lines_db} de {len(super_filtered_db)} pallets filtrados.")
+                    
                     # Botón de descarga específico del súper análisis filtrado
                     st.markdown("---")
                     csv_super_db = super_display_db.to_csv(index=False)
