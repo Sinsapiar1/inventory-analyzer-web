@@ -921,7 +921,6 @@ def extract_date_from_filename(filename):
     except Exception as e:
         return datetime.now()
 
-@st.cache_data
 def convert_excels_to_db(uploaded_files, sheet_index=1, progress_callback=None):
     """
     Convierte múltiples archivos Excel a una base de datos SQLite
