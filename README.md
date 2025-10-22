@@ -1,6 +1,24 @@
-# 📊 Analizador de Inventarios Negativos v6.2 Premium Edition
+# 📊 Analizador de Inventarios Negativos v6.3 Database Edition
 
-Aplicación web profesional de última generación para análisis avanzado de inventarios negativos con **diseño glassmorphism premium**, visualizaciones interactivas y scroll perfectamente estable.
+Aplicación web profesional de última generación para análisis avanzado de inventarios negativos con **diseño glassmorphism premium**, visualizaciones interactivas, scroll perfectamente estable y **consolidación de datos en base de datos SQLite**.
+
+---
+
+## ✨ Lo Nuevo en v6.3 Database Edition
+
+### 🗄️ **Consolidación de Datos en Base de Datos**
+- **Convertir múltiples Excel (100+) a archivo .db**: Consolida todo tu historial en un solo archivo
+- **Extracción automática de fechas**: Lee la fecha del nombre del archivo (formato: reporte_all_YYYYMMDD)
+- **Base de datos SQLite optimizada**: Incluye índices para consultas rápidas
+- **Análisis desde .db**: Procesa archivos .db igual que los Excel actuales
+- **Agregar datos nuevos**: Puedes agregar más archivos Excel a una base de datos existente
+- **Preparado para integración ERP**: Listo para recibir archivos .db directamente del sistema
+
+### 💡 **Casos de Uso de Base de Datos**
+1. **Consolidación Histórica**: Convierte 100+ archivos Excel históricos en un solo .db
+2. **Análisis Temporal**: Analiza tendencias sobre meses o años de datos
+3. **Compartir Datos**: Comparte un solo archivo .db en lugar de múltiples Excel
+4. **Integración Futura**: Recibe archivos .db directamente del ERP del área de sistemas
 
 ---
 
@@ -23,6 +41,14 @@ Aplicación web profesional de última generación para análisis avanzado de in
 ---
 
 ## 🚀 Características Principales
+
+### Base de Datos y Consolidación (NUEVO v6.3)
+- ✅ **Conversión masiva Excel → SQLite**: Procesa 100+ archivos simultáneamente
+- ✅ **Extracción automática de fechas**: Del formato de nombre del archivo
+- ✅ **Base de datos optimizada**: Índices en fecha, código y pallet
+- ✅ **Análisis desde .db**: Lee archivos .db igual que Excel
+- ✅ **Actualización incremental**: Agrega nuevos Excel a .db existente
+- ✅ **Preparado para ERP**: Recibe archivos .db directamente del sistema
 
 ### Análisis y Procesamiento
 - ✅ **Análisis por severidad** basado en magnitud del negativo (Bajo, Medio, Alto, Crítico)
@@ -183,6 +209,7 @@ pip install -r requirements.txt
 - `openpyxl >= 3.1.0` - Lectura de Excel
 - `xlsxwriter >= 3.1.0` - Escritura de Excel
 - `python-dateutil >= 2.8.0` - Manejo de fechas
+- `sqlite3` - Base de datos (incluido en Python estándar)
 
 #### 4. Ejecutar la Aplicación
 ```bash
@@ -310,9 +337,79 @@ Puedes cambiar esto en la barra lateral:
 
 ## 🎯 Guía de Uso Completa
 
-### 🆕 Modo de Operación: Preprocesador de Datos ERP
+### 🆕 Modos de Operación
 
-La aplicación ahora incluye dos modos de operación principales:
+La aplicación ahora incluye cuatro modos de operación principales:
+
+#### 🗄️ **Consolidar Excel → Base de Datos** (NUEVO v6.3)
+Transforma múltiples archivos Excel históricos en un solo archivo .db consolidado.
+
+**Características:**
+- ✅ Procesa 100+ archivos Excel simultáneamente
+- ✅ Extrae fecha automáticamente del nombre del archivo
+- ✅ Crea base de datos SQLite optimizada con índices
+- ✅ Mantiene información de archivo origen
+- ✅ Filtra solo inventarios negativos
+- ✅ Genera archivo .db descargable
+
+**Cómo usar:**
+1. Selecciona **"🗄️ Consolidar Excel → Base de Datos"** en la barra lateral
+2. Sube todos tus archivos Excel históricos (puede ser 100+ archivos)
+3. Configura el índice de hoja a procesar (por defecto: 1 = "Inventario Completo (Actual)")
+4. Define el nombre del archivo .db de salida
+5. Haz clic en **"🚀 Iniciar Consolidación"**
+6. Descarga el archivo .db generado
+7. Usa este archivo en el modo **"💾 Analizar desde Base de Datos"**
+
+**Formato del nombre de archivo:**
+```
+reporte_all_YYYYMMDD_HHMMSS.xlsx  →  Fecha: YYYY-MM-DD
+```
+
+**Ejemplo:**
+- `reporte_all_20251021_131737.xlsx` → Fecha: 2025-10-21
+- `reporte_all_20251020_142619.xlsx` → Fecha: 2025-10-20
+
+**Estructura de la Base de Datos:**
+```sql
+CREATE TABLE inventarios_negativos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo TEXT,
+    nombre TEXT,
+    almacen TEXT,
+    id_pallet TEXT,
+    cantidad_negativa REAL,
+    disponible REAL,
+    fecha_reporte DATE,
+    archivo_origen TEXT,
+    fecha_extraccion TIMESTAMP
+);
+```
+
+#### 💾 **Analizar desde Base de Datos** (NUEVO v6.3)
+Analiza inventarios desde un archivo .db consolidado.
+
+**Ventajas:**
+- ✅ Carga más rápida que múltiples Excel
+- ✅ Todo el historial en un solo archivo
+- ✅ Mismo análisis completo que modo Excel
+- ✅ Posibilidad de agregar más archivos Excel
+- ✅ Preparado para recibir .db del ERP
+
+**Cómo usar:**
+1. Selecciona **"💾 Analizar desde Base de Datos"** en la barra lateral
+2. Sube el archivo .db consolidado
+3. Opcionalmente, marca **"➕ Agregar más archivos Excel"** para incluir datos adicionales
+4. Configura filtros y parámetros en la barra lateral
+5. Haz clic en **"🚀 Ejecutar Análisis desde DB"**
+6. Visualiza todos los gráficos y tablas (igual que modo Excel)
+
+**Agregar Datos Nuevos:**
+Si tienes un archivo .db existente y quieres agregar nuevos archivos Excel:
+1. Sube el archivo .db
+2. Marca **"➕ Agregar más archivos Excel a esta base de datos"**
+3. Sube los nuevos archivos Excel
+4. El análisis incluirá todos los datos combinados
 
 #### 📥 **Preprocesar Datos ERP**
 Transforma archivos Excel crudos del ERP al formato requerido para el análisis.
@@ -730,6 +827,72 @@ Score = Días_Acumulados × |Cantidad_Promedio|
 ---
 
 ## 💡 Casos de Uso Avanzados
+
+### Caso 0: Consolidación de Historial Completo (NUEVO v6.3)
+
+**Objetivo:** Convertir 100+ archivos Excel históricos en una base de datos consolidada.
+
+**Escenario:** Tienes archivos Excel de inventarios negativos de los últimos 6 meses (o años).
+
+**Pasos:**
+1. Reúne todos los archivos Excel en una carpeta
+2. Ve a **"🗄️ Consolidar Excel → Base de Datos"**
+3. Selecciona todos los archivos Excel (puedes seleccionar 100+ a la vez)
+4. Verifica que el índice de hoja es correcto (por defecto: 1)
+5. Nombra el archivo: `inventarios_historico_2025.db`
+6. Haz clic en **"🚀 Iniciar Consolidación"**
+7. Espera mientras procesa (verás progreso en tiempo real)
+8. Descarga el archivo `.db` generado
+
+**Resultados esperados:**
+- Archivo `.db` único con todos los datos
+- Fechas extraídas automáticamente de nombres de archivo
+- Solo registros con inventario negativo
+- Estadísticas de procesamiento (archivos procesados, errores, total de registros)
+
+**Siguiente paso:** Usa el archivo `.db` en **"💾 Analizar desde Base de Datos"**
+
+---
+
+### Caso 0.1: Análisis Histórico Completo desde Base de Datos (NUEVO v6.3)
+
+**Objetivo:** Analizar tendencias históricas usando el archivo .db consolidado.
+
+**Pasos:**
+1. Ve a **"💾 Analizar desde Base de Datos"**
+2. Sube el archivo `.db` generado en el Caso 0
+3. Configura filtros si deseas (almacén, severidad, estado)
+4. Haz clic en **"🚀 Ejecutar Análisis desde DB"**
+5. Explora:
+   - **KPIs**: Total de pallets, activos, días promedio
+   - **Evolución Total**: Tendencia de inventarios negativos en el tiempo
+   - **Súper Análisis**: Evolución temporal por pallet individual
+   - **Mapa de Calor**: Patrones visuales a lo largo del tiempo
+6. Descarga reportes Excel o CSV
+
+**Resultado:** Análisis completo de meses/años de datos en segundos.
+
+---
+
+### Caso 0.2: Actualización de Base de Datos con Nuevos Excel (NUEVO v6.3)
+
+**Objetivo:** Agregar archivos Excel nuevos a una base de datos existente.
+
+**Escenario:** Ya tienes un `.db` consolidado y llegaron nuevos archivos Excel.
+
+**Pasos:**
+1. Ve a **"💾 Analizar desde Base de Datos"**
+2. Sube el archivo `.db` existente
+3. Marca **"➕ Agregar más archivos Excel a esta base de datos"**
+4. Sube los nuevos archivos Excel
+5. Haz clic en **"🚀 Ejecutar Análisis desde DB"**
+6. El análisis incluirá todos los datos (históricos + nuevos)
+
+**Ventaja:** No necesitas regenerar toda la base de datos, solo agregas los nuevos.
+
+**Nota:** Para guardar permanentemente los nuevos datos, deberás consolidar nuevamente todos los archivos (históricos + nuevos) en un nuevo `.db`.
+
+---
 
 ### Caso 1: Análisis de Código Específico
 
@@ -1167,7 +1330,34 @@ maxUploadSize = 500  # Aumentar a 500MB
 
 ## 🔄 Historial de Versiones
 
-### v6.2 - Premium Edition (Actual) ⭐
+### v6.3 - Database Edition (Actual) ⭐
+
+**Fecha:** Octubre 2025
+
+#### 🗄️ Consolidación de Datos en Base de Datos
+- ✅ **Modo "Consolidar Excel → Base de Datos"**: Convierte 100+ archivos Excel en un solo .db
+- ✅ **Extracción automática de fechas**: Del nombre del archivo (formato YYYYMMDD)
+- ✅ **Base de datos SQLite optimizada**: Con índices para rendimiento
+- ✅ **Modo "Analizar desde Base de Datos"**: Lee archivos .db para análisis
+- ✅ **Agregar datos nuevos**: Combina .db existente con nuevos Excel
+- ✅ **Preparado para ERP**: Listo para recibir archivos .db del sistema
+
+#### 📊 Características de Base de Datos
+- ✅ Tabla `inventarios_negativos` con 9 campos
+- ✅ Índices en fecha, código y pallet para consultas rápidas
+- ✅ Información de archivo origen mantenida
+- ✅ Timestamp de extracción automático
+- ✅ Compatibilidad total con análisis existente
+
+#### 🔧 Casos de Uso Implementados
+- ✅ Consolidación histórica de 6+ meses de datos
+- ✅ Análisis temporal desde archivo único
+- ✅ Actualización incremental de base de datos
+- ✅ Preparación para integración con ERP del área de sistemas
+
+---
+
+### v6.2 - Premium Edition ⭐
 
 **Fecha:** Octubre 2025
 

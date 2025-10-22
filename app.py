@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 import warnings
 from pathlib import Path
 import zipfile
+import sqlite3
+import re
 
 warnings.filterwarnings("ignore")
 
@@ -177,7 +179,7 @@ def analyze_pallets_data(df_total):
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Analizador de Inventarios Negativos v6.1 Web",
+    page_title="Analizador de Inventarios Negativos v6.3 Database Edition",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -929,13 +931,287 @@ def export_preprocessed_report(df_procesado, stats, fecha_suffix=None):
     except Exception as e:
         return None, None, False, str(e)
 
+# ========== NUEVAS FUNCIONES PARA MANEJO DE BASE DE DATOS ==========
+
+def extract_date_from_filename(filename):
+    """
+    Extrae la fecha del nombre del archivo
+    Formato esperado: reporte_all_YYYYMMDD_HHMMSS.xlsx
+    """
+    try:
+        # Buscar patrón de fecha YYYYMMDD
+        pattern = r'(\d{8})'
+        match = re.search(pattern, filename)
+        if match:
+            fecha_str = match.group(1)
+            fecha = datetime.strptime(fecha_str, "%Y%m%d")
+            return fecha
+        else:
+            # Si no encuentra fecha, usa fecha actual
+            return datetime.now()
+    except Exception as e:
+        return datetime.now()
+
+def convert_excels_to_db(uploaded_files, sheet_index=1, progress_callback=None):
+    """
+    Convierte múltiples archivos Excel a una base de datos SQLite
+    
+    Args:
+        uploaded_files: Lista de archivos Excel cargados
+        sheet_index: Índice de la hoja a leer (por defecto 1 = segunda hoja)
+        progress_callback: Función opcional para reportar progreso
+    
+    Returns:
+        buffer: BytesIO con el archivo .db
+        stats: Diccionario con estadísticas de conversión
+        success: Boolean indicando si tuvo éxito
+        error: Mensaje de error si falló
+    """
+    try:
+        # Crear conexión a base de datos en memoria
+        conn = sqlite3.connect(':memory:')
+        cursor = conn.cursor()
+        
+        # Crear tabla para almacenar inventarios
+        cursor.execute('''
+            CREATE TABLE inventarios_negativos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo TEXT,
+                nombre TEXT,
+                almacen TEXT,
+                id_pallet TEXT,
+                cantidad_negativa REAL,
+                disponible REAL,
+                fecha_reporte DATE,
+                archivo_origen TEXT,
+                fecha_extraccion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Crear índices para mejorar rendimiento
+        cursor.execute('CREATE INDEX idx_fecha ON inventarios_negativos(fecha_reporte)')
+        cursor.execute('CREATE INDEX idx_codigo ON inventarios_negativos(codigo)')
+        cursor.execute('CREATE INDEX idx_pallet ON inventarios_negativos(id_pallet)')
+        
+        total_registros = 0
+        archivos_procesados = 0
+        archivos_error = 0
+        errores_detalle = []
+        
+        for i, uploaded_file in enumerate(uploaded_files):
+            try:
+                if progress_callback:
+                    progress_callback(f"Procesando {i+1}/{len(uploaded_files)}: {uploaded_file.name}")
+                
+                # Leer archivo Excel
+                file_content = uploaded_file.read()
+                
+                # Extraer fecha del nombre del archivo
+                fecha_reporte = extract_date_from_filename(uploaded_file.name)
+                
+                # Leer la hoja especificada
+                df = pd.read_excel(io.BytesIO(file_content), sheet_name=sheet_index)
+                
+                # Normalizar nombres de columnas (similar a la lógica existente)
+                df = df.rename(columns={
+                    "Código": "Codigo",
+                    "Código Producto": "Codigo",
+                    "ID de Pallet": "ID_Pallet",
+                    "Inventario Físico": "Cantidad_Negativa",
+                    "Nombre": "Nombre",
+                    "Descripción": "Nombre",
+                    "Almacén": "Almacen",
+                    "Almacen": "Almacen",
+                    "Disponible": "Disponible",
+                    "Física disponible": "Disponible"
+                })
+                
+                # Verificar columnas esenciales
+                columnas_requeridas = ["Codigo", "ID_Pallet", "Cantidad_Negativa"]
+                if not all(col in df.columns for col in columnas_requeridas):
+                    errores_detalle.append(f"{uploaded_file.name}: Faltan columnas requeridas")
+                    archivos_error += 1
+                    continue
+                
+                # Limpiar datos
+                for col in ["Codigo", "ID_Pallet"]:
+                    if col in df.columns:
+                        df[col] = (
+                            df[col]
+                            .astype(str)
+                            .str.replace(",", "", regex=False)
+                            .str.split(".").str[0]
+                            .str.strip()
+                        )
+                
+                # Asegurar que existen columnas opcionales
+                if "Nombre" not in df.columns:
+                    df["Nombre"] = ""
+                if "Almacen" not in df.columns:
+                    df["Almacen"] = "N/A"
+                if "Disponible" not in df.columns:
+                    df["Disponible"] = df["Cantidad_Negativa"]
+                
+                # Convertir a string para evitar problemas de tipos
+                df["Almacen"] = df["Almacen"].astype(str)
+                df["Nombre"] = df["Nombre"].astype(str)
+                
+                # Convertir cantidad a numérico
+                df["Cantidad_Negativa"] = pd.to_numeric(df["Cantidad_Negativa"], errors="coerce").fillna(0)
+                
+                # Filtrar solo negativos
+                df_negativos = df[df["Cantidad_Negativa"] < 0].copy()
+                
+                if len(df_negativos) == 0:
+                    if progress_callback:
+                        progress_callback(f"  ⚠️ {uploaded_file.name}: Sin registros negativos")
+                    continue
+                
+                # Preparar datos para inserción
+                df_negativos["fecha_reporte"] = fecha_reporte.strftime("%Y-%m-%d")
+                df_negativos["archivo_origen"] = uploaded_file.name
+                
+                # Insertar en base de datos
+                for _, row in df_negativos.iterrows():
+                    cursor.execute('''
+                        INSERT INTO inventarios_negativos 
+                        (codigo, nombre, almacen, id_pallet, cantidad_negativa, disponible, fecha_reporte, archivo_origen)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        str(row.get("Codigo", "")),
+                        str(row.get("Nombre", "")),
+                        str(row.get("Almacen", "N/A")),
+                        str(row.get("ID_Pallet", "")),
+                        float(row.get("Cantidad_Negativa", 0)),
+                        float(row.get("Disponible", 0)),
+                        row["fecha_reporte"],
+                        row["archivo_origen"]
+                    ))
+                
+                total_registros += len(df_negativos)
+                archivos_procesados += 1
+                
+                if progress_callback:
+                    progress_callback(f"  ✅ {uploaded_file.name}: {len(df_negativos)} registros agregados")
+                
+            except Exception as e:
+                archivos_error += 1
+                errores_detalle.append(f"{uploaded_file.name}: {str(e)}")
+                if progress_callback:
+                    progress_callback(f"  ❌ Error en {uploaded_file.name}: {str(e)}")
+                continue
+        
+        conn.commit()
+        
+        # Guardar base de datos en archivo temporal
+        temp_db_path = '/tmp/consolidated_inventory.db'
+        disk_conn = sqlite3.connect(temp_db_path)
+        
+        # Copiar base de datos en memoria a archivo en disco
+        conn.backup(disk_conn)
+        disk_conn.close()
+        conn.close()
+        
+        # Leer archivo y guardar en buffer
+        buffer = io.BytesIO()
+        with open(temp_db_path, 'rb') as f:
+            buffer.write(f.read())
+        
+        buffer.seek(0)
+        
+        # Limpiar archivo temporal
+        Path(temp_db_path).unlink(missing_ok=True)
+        
+        # Estadísticas
+        stats = {
+            "total_archivos": len(uploaded_files),
+            "archivos_procesados": archivos_procesados,
+            "archivos_error": archivos_error,
+            "total_registros": total_registros,
+            "errores_detalle": errores_detalle,
+            "fecha_creacion": datetime.now()
+        }
+        
+        return buffer, stats, True, None
+        
+    except Exception as e:
+        return None, None, False, str(e)
+
+def read_db_file(db_file_content):
+    """
+    Lee un archivo .db y retorna DataFrame similar al proceso de Excel
+    
+    Args:
+        db_file_content: Contenido del archivo .db
+    
+    Returns:
+        df: DataFrame con los datos
+        success: Boolean
+        error: Mensaje de error si falló
+    """
+    try:
+        # Guardar contenido en archivo temporal
+        temp_db_path = '/tmp/temp_inventory.db'
+        with open(temp_db_path, 'wb') as f:
+            f.write(db_file_content)
+        
+        # Conectar a base de datos
+        conn = sqlite3.connect(temp_db_path)
+        
+        # Leer datos
+        query = '''
+            SELECT 
+                codigo as Codigo,
+                nombre as Nombre,
+                almacen as Almacen,
+                id_pallet as ID_Pallet,
+                cantidad_negativa as Cantidad_Negativa,
+                fecha_reporte as Fecha_Reporte,
+                archivo_origen as Archivo_Origen
+            FROM inventarios_negativos
+            ORDER BY fecha_reporte, codigo
+        '''
+        
+        df = pd.read_sql_query(query, conn)
+        
+        # Convertir fecha_reporte a datetime
+        df["Fecha_Reporte"] = pd.to_datetime(df["Fecha_Reporte"])
+        
+        # Cerrar conexión
+        conn.close()
+        
+        # Limpiar archivo temporal
+        Path(temp_db_path).unlink(missing_ok=True)
+        
+        return df, True, None
+        
+    except Exception as e:
+        return None, False, str(e)
+
+def save_db_to_file(buffer, filename=None):
+    """
+    Prepara el archivo .db para descarga
+    
+    Args:
+        buffer: BytesIO con contenido de la DB
+        filename: Nombre del archivo (opcional)
+    
+    Returns:
+        buffer: Buffer listo para descarga
+        filename: Nombre del archivo
+    """
+    if filename is None:
+        filename = f"inventarios_consolidados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    
+    return buffer, filename
+
 # INTERFAZ PRINCIPAL
 def main():
     # Header
     st.markdown("""
     <div class="main-header">
-        <h1>📊 Analizador de Inventarios Negativos v6.2 Web</h1>
-        <p>Premium Edition - Con preprocesador ERP integrado</p>
+        <h1>📊 Analizador de Inventarios Negativos v6.3 Database Edition</h1>
+        <p>Premium Edition - Con consolidación de datos y preprocesador ERP integrado</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -943,8 +1219,13 @@ def main():
     st.sidebar.title("🎯 Modo de Operación")
     modo = st.sidebar.radio(
         "Selecciona el modo:",
-        ["📥 Preprocesar Datos ERP", "📊 Analizar Inventarios"],
-        help="Preprocesar: Transforma datos crudos del ERP | Analizar: Procesa reportes ya formateados"
+        [
+            "📥 Preprocesar Datos ERP", 
+            "📊 Analizar Inventarios",
+            "🗄️ Consolidar Excel → Base de Datos",
+            "💾 Analizar desde Base de Datos"
+        ],
+        help="Preprocesar: Transforma datos crudos del ERP | Analizar: Procesa reportes ya formateados | Consolidar: Convierte múltiples Excel a .db | Analizar DB: Lee desde archivo .db"
     )
 
     st.sidebar.markdown("---")
@@ -974,13 +1255,15 @@ def main():
         # Configuración
         col1, col2 = st.columns(2)
         with col1:
-            sheet_idx_erp = st.number_input(
-                "📋 Índice de hoja a procesar",
-                min_value=0,
+            sheet_number_erp = st.number_input(
+                "📋 Número de hoja a procesar",
+                min_value=1,
                 max_value=10,
-                value=0,
-                help="0 = primera hoja, 1 = segunda hoja, etc."
+                value=1,
+                help="La hoja del Excel donde están los datos (1 = primera hoja, 2 = segunda hoja, etc.)"
             )
+            # Convertir a índice (restar 1 porque Python usa índices base 0)
+            sheet_idx_erp = sheet_number_erp - 1
 
         with col2:
             fecha_manual = st.date_input(
@@ -1085,6 +1368,683 @@ def main():
                 - Inventario físico
                 """)
 
+    # ========== MODO 3: CONSOLIDAR EXCEL → BASE DE DATOS ==========
+    elif modo == "🗄️ Consolidar Excel → Base de Datos":
+        st.subheader("🗄️ Consolidar Múltiples Excel en Base de Datos")
+        st.info("""
+        **Este módulo consolida múltiples archivos Excel históricos en un solo archivo .db**
+
+        **Proceso:**
+        1. Sube todos los archivos Excel que deseas consolidar (100+)
+        2. Selecciona el número de hoja donde están los datos (por defecto: **Hoja 2** = "Inventario Completo (Actual)")
+        3. El sistema extrae automáticamente:
+           - ✅ Datos de la hoja seleccionada
+           - ✅ Fecha del nombre del archivo (formato: reporte_all_YYYYMMDD)
+           - ✅ Solo registros con inventario negativo
+        4. Genera un archivo .db consolidado descargable
+        5. Puedes agregar más archivos Excel más tarde usando el modo "💾 Analizar desde Base de Datos"
+        
+        **Nota:** Si tus datos están en una hoja diferente, cambia el "Número de hoja a procesar" abajo.
+        """)
+
+        # Upload de archivos Excel
+        excel_files = st.file_uploader(
+            "📁 Subir archivos Excel para consolidar",
+            type=['xlsx', 'xls'],
+            accept_multiple_files=True,
+            help="Selecciona todos los archivos Excel históricos que deseas consolidar",
+            key="consolidate_uploader"
+        )
+
+        # Configuración
+        col1, col2 = st.columns(2)
+        with col1:
+            sheet_number = st.number_input(
+                "📋 Número de hoja a procesar",
+                min_value=1,
+                max_value=10,
+                value=2,
+                help="La hoja del Excel donde están los datos (por defecto: 2 = 'Inventario Completo (Actual)')"
+            )
+            # Convertir a índice (restar 1 porque Python usa índices base 0)
+            sheet_idx_consolidate = sheet_number - 1
+
+        with col2:
+            db_filename = st.text_input(
+                "💾 Nombre del archivo .db",
+                value=f"inventarios_consolidados_{datetime.now().strftime('%Y%m%d')}.db",
+                help="Nombre del archivo de base de datos a generar"
+            )
+
+        if excel_files:
+            st.markdown("---")
+            st.subheader(f"📊 Consolidando {len(excel_files)} archivos")
+
+            # Botón para procesar
+            if st.button("🚀 Iniciar Consolidación", type="primary", use_container_width=True):
+                progress_placeholder = st.empty()
+                log_placeholder = st.empty()
+                
+                logs = []
+                
+                def progress_callback(message):
+                    logs.append(f"{datetime.now().strftime('%H:%M:%S')} - {message}")
+                    log_placeholder.text('\n'.join(logs[-10:]))  # Mostrar últimas 10 líneas
+                
+                with st.spinner("Procesando archivos..."):
+                    buffer, stats, success, error = convert_excels_to_db(
+                        excel_files,
+                        sheet_idx_consolidate,
+                        progress_callback
+                    )
+                
+                if success and buffer is not None:
+                    st.success("✅ Consolidación completada exitosamente!")
+                    
+                    # Mostrar estadísticas
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Total Archivos", stats['total_archivos'])
+                    with col2:
+                        st.metric("Procesados", stats['archivos_procesados'], 
+                                delta=None if stats['archivos_procesados'] == stats['total_archivos'] else f"-{stats['archivos_error']}")
+                    with col3:
+                        st.metric("Con Errores", stats['archivos_error'])
+                    with col4:
+                        st.metric("Total Registros", stats['total_registros'])
+                    
+                    # Mostrar errores si los hay
+                    if stats['errores_detalle']:
+                        with st.expander("⚠️ Ver detalles de errores"):
+                            for error_msg in stats['errores_detalle']:
+                                st.warning(error_msg)
+                    
+                    st.markdown("---")
+                    st.subheader("💾 Descargar Base de Datos Consolidada")
+                    
+                    # Preparar descarga
+                    st.download_button(
+                        label="📥 Descargar Archivo .db",
+                        data=buffer.getvalue(),
+                        file_name=db_filename,
+                        mime="application/x-sqlite3",
+                        use_container_width=True
+                    )
+                    
+                    st.success(f"""
+                    ✅ **Archivo listo para descarga**: `{db_filename}`
+
+                    **Siguiente paso:**
+                    1. Descarga este archivo .db
+                    2. Cambia al modo "💾 Analizar desde Base de Datos"
+                    3. Sube este archivo .db para realizar análisis temporal
+                    4. También puedes agregar más archivos Excel a esta base de datos más tarde
+                    """)
+                else:
+                    st.error(f"❌ Error en la consolidación: {error}")
+
+    # ========== MODO 4: ANALIZAR DESDE BASE DE DATOS ==========
+    elif modo == "💾 Analizar desde Base de Datos":
+        st.subheader("💾 Analizar Inventarios desde Base de Datos")
+        st.info("""
+        **Este módulo analiza inventarios desde un archivo .db consolidado**
+
+        **Ventajas:**
+        - ✅ Carga más rápida que múltiples Excel
+        - ✅ Todos los datos históricos en un solo archivo
+        - ✅ Mismo análisis que el modo Excel
+        - ✅ Puedes agregar más datos Excel a la DB existente
+        """)
+
+        # Upload del archivo .db
+        db_file = st.file_uploader(
+            "📁 Subir archivo .db consolidado",
+            type=['db', 'sqlite', 'sqlite3'],
+            help="Archivo de base de datos generado en el modo 'Consolidar Excel → Base de Datos'",
+            key="db_analyzer_uploader"
+        )
+
+        # Opción para agregar más Excel a la DB
+        add_more_excel = st.checkbox(
+            "➕ Agregar más archivos Excel a esta base de datos",
+            help="Permite agregar nuevos archivos Excel al archivo .db existente"
+        )
+
+        if add_more_excel and db_file:
+            additional_files = st.file_uploader(
+                "📁 Archivos Excel adicionales",
+                type=['xlsx', 'xls'],
+                accept_multiple_files=True,
+                help="Archivos Excel nuevos para agregar a la base de datos",
+                key="additional_excel_uploader"
+            )
+            
+            if additional_files:
+                st.info(f"Se agregarán {len(additional_files)} archivos adicionales a la base de datos")
+
+        # Sidebar para configuración
+        with st.sidebar:
+            st.header("⚙️ Configuración")
+            
+            # Configuraciones (igual que el modo Excel)
+            top_n = st.slider("🔝 Top N para análisis", 5, 50, 10)
+            
+            # Filtros
+            st.subheader("🔍 Filtros")
+            filter_almacen = st.selectbox("Almacén", ["Todos"] +
+                (list(st.session_state.get('analisis', pd.DataFrame()).get('Almacen', pd.Series()).unique())
+                 if 'analisis' in st.session_state else []))
+
+            filter_severidad = st.selectbox("Severidad", ["Todas", "Crítico", "Alto", "Medio", "Bajo"])
+            filter_estado = st.selectbox("Estado", ["Todos", "Activo", "Resuelto"])
+
+            # Botón de análisis
+            analyze_button_db = st.button("🚀 Ejecutar Análisis desde DB", type="primary", use_container_width=True)
+
+        # Contenido principal
+        if analyze_button_db and db_file:
+            try:
+                # Leer contenido del archivo .db
+                db_content = db_file.read()
+                
+                # Leer datos desde la base de datos
+                with st.spinner("Leyendo base de datos..."):
+                    df_total, success, error = read_db_file(db_content)
+                
+                if not success or df_total is None:
+                    st.error(f"❌ Error al leer la base de datos: {error}")
+                else:
+                    # Normalizar datos (usar la función existente)
+                    analyzer = InventoryAnalyzerWeb()
+                    progress_placeholder = st.empty()
+                    st.session_state.progress_placeholder = progress_placeholder
+                    
+                    df_total_normalized = analyzer.normalize_data(df_total)
+                    
+                    # Si hay archivos adicionales, procesarlos y agregarlos
+                    if add_more_excel and 'additional_files' in locals() and additional_files:
+                        with st.spinner("Procesando archivos adicionales..."):
+                            df_additional = analyzer.process_uploaded_files(additional_files)
+                            df_total_normalized = pd.concat([df_total_normalized, df_additional], ignore_index=True)
+                            st.success(f"✅ Agregados {len(additional_files)} archivos Excel adicionales")
+                    
+                    # Continuar con el análisis normal
+                    with st.spinner("Analizando datos..."):
+                        analisis = analyzer.analyze_pallets(df_total_normalized)
+                        super_analisis = analyzer.create_super_analysis(df_total_normalized)
+                        reincidencias = analyzer.detect_recurrences(df_total_normalized)
+
+                        # Guardar en session state
+                        st.session_state.df_total = df_total_normalized
+                        st.session_state.analisis = analisis
+                        st.session_state.super_analisis = super_analisis
+                        st.session_state.reincidencias = reincidencias
+
+                    progress_placeholder.success("✅ Análisis completado desde base de datos!")
+
+            except Exception as e:
+                st.error(f"❌ Error en el análisis: {e}")
+                import traceback
+                st.error(traceback.format_exc())
+
+        # Mostrar resultados si existen datos (reutilizar la lógica del modo Excel)
+        if 'analisis' in st.session_state:
+            # Aquí se reutiliza toda la lógica de visualización del modo Excel
+            # Inyectar JavaScript GLOBAL para scroll estable (igual que en modo Excel)
+            components.html("""
+                <script>
+                (function() {
+                    function saveScrollPosition() {
+                        const scrollPos = window.parent.scrollY || window.parent.pageYOffset;
+                        sessionStorage.setItem('streamlit_scroll_pos', scrollPos);
+                    }
+                    
+                    function restoreScrollPosition() {
+                        const savedPos = sessionStorage.getItem('streamlit_scroll_pos');
+                        if (savedPos && savedPos !== '0') {
+                            requestAnimationFrame(function() {
+                                window.parent.scrollTo({
+                                    top: parseInt(savedPos),
+                                    behavior: 'auto'
+                                });
+                            });
+                        }
+                    }
+                    
+                    let scrollTimeout;
+                    window.parent.addEventListener('scroll', function() {
+                        clearTimeout(scrollTimeout);
+                        scrollTimeout = setTimeout(saveScrollPosition, 50);
+                    }, { passive: true });
+                    
+                    restoreScrollPosition();
+                    setTimeout(restoreScrollPosition, 100);
+                    setTimeout(restoreScrollPosition, 300);
+                    setTimeout(restoreScrollPosition, 500);
+                })();
+                </script>
+            """, height=0)
+            
+            # Usar las mismas visualizaciones que el modo Excel
+            analisis = st.session_state.analisis
+            super_analisis = st.session_state.super_analisis
+            reincidencias = st.session_state.reincidencias
+            df_total = st.session_state.df_total
+            
+            # Aplicar filtros
+            analisis_filtered = analisis.copy()
+            if filter_almacen != "Todos":
+                analisis_filtered = analisis_filtered[analisis_filtered["Almacen"] == filter_almacen]
+            if filter_severidad != "Todas":
+                analisis_filtered = analisis_filtered[analisis_filtered["Severidad"] == filter_severidad]
+            if filter_estado != "Todos":
+                analisis_filtered = analisis_filtered[analisis_filtered["Estado"] == filter_estado]
+            
+            # KPIs principales
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Pallets", len(analisis_filtered))
+            with col2:
+                activos = (analisis_filtered["Estado"] == "Activo").sum()
+                st.metric("Activos Hoy", activos)
+            with col3:
+                dias_prom = round(analisis_filtered["Dias_Acumulados"].mean(), 1) if len(analisis_filtered) > 0 else 0
+                st.metric("Días Promedio", dias_prom)
+            with col4:
+                total_negativo = round(analisis_filtered["Cantidad_Suma"].sum(), 0)
+                st.metric("Total Negativo", f"{total_negativo:,.0f}")
+            
+            # Nota sobre la fuente de datos
+            st.success(f"""
+            🗄️ **Fuente de datos**: Base de datos consolidada  
+            📅 **Registros totales**: {len(df_total):,}  
+            🗓️ **Rango de fechas**: {df_total['Fecha_Reporte'].min().strftime('%Y-%m-%d')} a {df_total['Fecha_Reporte'].max().strftime('%Y-%m-%d')}
+            """)
+            
+            # Gráficos
+            st.subheader("📈 Visualizaciones")
+            fig1, fig2, fig3, fig4 = create_charts(analisis_filtered, super_analisis, top_n)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.plotly_chart(fig1, use_container_width=True)
+                st.plotly_chart(fig3, use_container_width=True)
+            with col2:
+                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig4, use_container_width=True)
+            
+            # Tablas de datos
+            tab1, tab2, tab3, tab4 = st.tabs(["📊 Análisis Principal", "🔄 Reincidencias", "📈 Súper Análisis", "📋 Datos Crudos"])
+            
+            with tab1:
+                st.subheader("Problemas por Severidad")
+                
+                # Formatear columna de severidad con colores
+                def format_severity(val):
+                    colors = {
+                        "Crítico": "background-color: #ff4444; color: white",
+                        "Alto": "background-color: #ff9800; color: white", 
+                        "Medio": "background-color: #ffb74d; color: black",
+                        "Bajo": "background-color: #81c784; color: black"
+                    }
+                    return colors.get(val, "")
+                
+                styled_analisis = analisis_filtered.style.applymap(format_severity, subset=['Severidad'])
+                st.dataframe(styled_analisis, width='stretch', height=400)
+            
+            with tab2:
+                st.subheader("Reincidencias Detectadas")
+                st.dataframe(reincidencias, width='stretch', height=400)
+            
+            with tab3:
+                st.subheader("Súper Análisis - Evolución Temporal por Pallet")
+                
+                # Controles avanzados para Súper Análisis
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    buscar_codigo_db = st.text_input("🔍 Buscar código:", key="buscar_codigo_db")
+                
+                with col2:
+                    solo_activos_db = st.checkbox("Solo artículos activos (última fecha)", key="solo_activos_db")
+                
+                with col3:
+                    almacen_super_db = st.selectbox("Filtrar por almacén:", 
+                        ["Todos"] + list(super_analisis["Almacen"].unique()),
+                        key="almacen_super_db")
+                
+                with col4:
+                    mostrar_vacios_db = st.checkbox("Mostrar celdas vacías como 0", key="mostrar_vacios_db")
+                
+                # Filtros adicionales en expandible
+                with st.expander("🔧 Filtros Avanzados"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        codigos_excluir_super_db = st.text_area(
+                            "Códigos a EXCLUIR (separados por comas):",
+                            key="codigos_excluir_super_db",
+                            height=60
+                        )
+                    
+                    with col2:
+                        codigos_incluir_super_db = st.text_area(
+                            "Solo INCLUIR códigos (separados por comas):",
+                            key="codigos_incluir_super_db", 
+                            height=60
+                        )
+                    
+                    # Filtro por rango de fechas
+                    date_cols_db = [c for c in super_analisis.columns if isinstance(c, pd.Timestamp)]
+                    if date_cols_db:
+                        fecha_inicio_db = st.selectbox("Desde fecha:", [None] + sorted(date_cols_db), key="fecha_inicio_db")
+                        fecha_fin_db = st.selectbox("Hasta fecha:", [None] + sorted(date_cols_db), key="fecha_fin_db")
+                
+                # Aplicar filtros al súper análisis
+                super_filtered_db = super_analisis.copy()
+                date_cols_db = [c for c in super_analisis.columns if isinstance(c, pd.Timestamp)]
+                
+                # Filtro por búsqueda de código
+                if buscar_codigo_db:
+                    mask = super_filtered_db["Codigo"].astype(str).str.contains(buscar_codigo_db, case=False, na=False)
+                    super_filtered_db = super_filtered_db[mask]
+                
+                # Filtro por almacén
+                if almacen_super_db != "Todos":
+                    super_filtered_db = super_filtered_db[super_filtered_db["Almacen"] == almacen_super_db]
+                
+                # Filtro códigos a excluir
+                if codigos_excluir_super_db.strip():
+                    codigos_excl = [c.strip() for c in codigos_excluir_super_db.split(",") if c.strip()]
+                    super_filtered_db = super_filtered_db[~super_filtered_db["Codigo"].astype(str).isin(codigos_excl)]
+                
+                # Filtro solo incluir códigos
+                if codigos_incluir_super_db.strip():
+                    codigos_incl = [c.strip() for c in codigos_incluir_super_db.split(",") if c.strip()]
+                    super_filtered_db = super_filtered_db[super_filtered_db["Codigo"].astype(str).isin(codigos_incl)]
+                
+                # Filtro solo activos (tienen valor en última fecha)
+                if solo_activos_db and date_cols_db:
+                    ultima_fecha = max(date_cols_db)
+                    super_filtered_db = super_filtered_db[super_filtered_db[ultima_fecha].notna() & (super_filtered_db[ultima_fecha] != 0)]
+                
+                # Filtro por rango de fechas
+                if date_cols_db and 'fecha_inicio_db' in locals() and 'fecha_fin_db' in locals() and fecha_inicio_db and fecha_fin_db:
+                    cols_to_show = ["Codigo", "Nombre", "ID_Pallet", "Almacen"]
+                    date_range = [d for d in sorted(date_cols_db) if fecha_inicio_db <= d <= fecha_fin_db]
+                    super_filtered_db = super_filtered_db[cols_to_show + date_range]
+                    date_cols_db = date_range  # Actualizar date_cols para gráficos
+                
+                # Mostrar información de filtrado
+                st.info(f"📋 **Mostrando {len(super_filtered_db)} de {len(super_analisis)} registros** con los filtros aplicados")
+                
+                # Procesar datos para visualización
+                if mostrar_vacios_db:
+                    super_display_db = super_filtered_db.fillna(0)
+                else:
+                    super_display_db = super_filtered_db.fillna("")
+                
+                # Función para colorear celdas
+                def colorear_super_analisis_db(val):
+                    if pd.isna(val) or val == "" or val == 0:
+                        return ""
+                    elif isinstance(val, (int, float)) and val < 0:
+                        intensity = min(abs(val) / 100, 1.0)
+                        alpha = 0.3 + (intensity * 0.5)
+                        return f"background-color: rgba(255, 68, 68, {alpha}); color: white; font-weight: bold;"
+                    return ""
+                
+                # Aplicar estilo y mostrar tabla
+                if not super_display_db.empty:
+                    styled_super_db = super_display_db.style.applymap(colorear_super_analisis_db)
+                    st.dataframe(styled_super_db, width='stretch', height=500)
+                    
+                    # Estadísticas rápidas
+                    st.markdown("---")
+                    st.markdown("#### 📊 Estadísticas de la Vista Actual")
+                    
+                    if date_cols_db:
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            total_neg_db = super_display_db[date_cols_db].select_dtypes(include=[np.number]).sum().sum()
+                            st.metric("Total Negativo", f"{total_neg_db:,.0f}", help="Suma total de valores negativos visibles")
+                        
+                        with col2:
+                            pallets_activos_db = len(super_filtered_db) if solo_activos_db else len(super_filtered_db[super_filtered_db[date_cols_db].iloc[:, -1].notna()])
+                            st.metric("Pallets en Vista", pallets_activos_db, help="Número de pallets mostrados con los filtros aplicados")
+                        
+                        with col3:
+                            promedio_neg_db = super_display_db[date_cols_db].select_dtypes(include=[np.number]).mean().mean()
+                            promedio_display_db = f"{promedio_neg_db:.1f}" if pd.notna(promedio_neg_db) else "N/A"
+                            st.metric("Promedio por Celda", promedio_display_db, help="Promedio de valores en las celdas visibles")
+                    
+                    # GRÁFICOS DINÁMICOS
+                    st.markdown("---")
+                    st.markdown("### 📈 Análisis Visual de Datos Filtrados")
+                    st.markdown("Visualizaciones interactivas basadas en los datos filtrados mostrados arriba")
+                    
+                    # Crear gráficos solo si hay datos con fechas
+                    if date_cols_db and len(super_filtered_db) > 0:
+                        
+                        # Gráfico 1 y 2: Evolución Total + Distribución por Almacén
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Sumar por fecha todos los valores filtrados
+                            evolution_data_db = []
+                            for fecha in sorted(date_cols_db):
+                                columna = pd.to_numeric(super_display_db[fecha], errors='coerce')
+                                total = columna.sum(skipna=True)
+                                if pd.notna(total) and total != 0:
+                                    evolution_data_db.append({"Fecha": fecha, "Total": abs(total)})
+                            
+                            if evolution_data_db:
+                                evo_df_db = pd.DataFrame(evolution_data_db)
+                                fig_evo_db = px.line(
+                                    evo_df_db, 
+                                    x="Fecha", 
+                                    y="Total",
+                                    title="Evolución Total (Datos Filtrados)",
+                                    markers=True
+                                )
+                                fig_evo_db.update_traces(line_color="#ff4444", line_width=3)
+                                fig_evo_db.update_layout(height=350)
+                                st.plotly_chart(fig_evo_db, use_container_width=True)
+                        
+                        with col2:
+                            # Distribución por almacén de datos filtrados
+                            almacen_data_db = {}
+                            for almacen in super_filtered_db["Almacen"].unique():
+                                if pd.notna(almacen):
+                                    subset = super_display_db[super_display_db["Almacen"] == almacen]
+                                    total = 0
+                                    for fecha in date_cols_db:
+                                        columna_numerica = pd.to_numeric(subset[fecha], errors='coerce')
+                                        total += columna_numerica.sum(skipna=True)
+                                    
+                                    if total != 0:
+                                        almacen_data_db[almacen] = abs(total)
+                            
+                            if almacen_data_db:
+                                fig_almacen_db = px.pie(
+                                    values=list(almacen_data_db.values()),
+                                    names=list(almacen_data_db.keys()),
+                                    title="Distribución por Almacén (Filtrado)"
+                                )
+                                fig_almacen_db.update_layout(height=350)
+                                st.plotly_chart(fig_almacen_db, use_container_width=True)
+                        
+                        # Gráfico 3: MAPA DE CALOR EXPANDIDO
+                        if len(date_cols_db) > 1:
+                            st.subheader("🔥 Mapa de Calor - Evolución por Pallet (Expandido)")
+                            
+                            # Control de filas para mapa de calor
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.write("Controla cuántos pallets mostrar en el mapa de calor:")
+                            with col2:
+                                opciones_heat_db = [10, 20, 30, 50, 100]
+                                if len(super_filtered_db) not in opciones_heat_db:
+                                    opciones_heat_db.append(len(super_filtered_db))
+                                opciones_heat_db = sorted([x for x in opciones_heat_db if x <= len(super_filtered_db)])
+                                
+                                max_rows_heat_db = st.selectbox(
+                                    "Pallets:", 
+                                    options=opciones_heat_db,
+                                    index=min(2, len(opciones_heat_db) - 1),
+                                    key="max_rows_heatmap_db"
+                                )
+                            
+                            # Preparar datos para heatmap
+                            super_filtered_copy_db = super_filtered_db.copy()
+                            super_filtered_copy_db['Codigo_Pallet'] = (super_filtered_copy_db['Codigo'].astype(str) + 
+                                                                  '_' + super_filtered_copy_db['ID_Pallet'].astype(str))
+                            
+                            # Tomar las filas seleccionadas
+                            super_heat_db = super_filtered_copy_db.head(max_rows_heat_db)
+                            heatmap_data_db = super_heat_db.set_index('Codigo_Pallet')[date_cols_db].copy()
+                            
+                            # Convertir a numérico
+                            for col in heatmap_data_db.columns:
+                                heatmap_data_db[col] = pd.to_numeric(heatmap_data_db[col], errors='coerce')
+                            
+                            # Limpiar datos
+                            heatmap_data_db = heatmap_data_db.dropna(how='all').fillna(0)
+                            
+                            if not heatmap_data_db.empty:
+                                # Altura dinámica según número de filas
+                                height_map_db = max(500, len(heatmap_data_db) * 25)
+                                
+                                fig_heat_db = px.imshow(
+                                    heatmap_data_db.values,
+                                    labels=dict(x="Fecha", y="Código_Pallet", color="Cantidad"),
+                                    x=[d.strftime("%m/%d") for d in sorted(date_cols_db)],
+                                    y=heatmap_data_db.index,
+                                    title=f"Mapa de Calor - {len(heatmap_data_db)} Pallets Filtrados",
+                                    color_continuous_scale="RdBu_r",
+                                    aspect="auto"
+                                )
+                                fig_heat_db.update_layout(height=height_map_db)
+                                st.plotly_chart(fig_heat_db, use_container_width=True)
+                                
+                                st.info(f"Mostrando {len(heatmap_data_db)} de {len(super_filtered_db)} pallets filtrados")
+                        
+                        # Gráfico 4: EVOLUCIÓN INDIVIDUAL
+                        if len(super_filtered_db) >= 1:
+                            st.subheader("📈 Evolución Individual por Pallet")
+                            
+                            # Control para líneas de evolución
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.write("Líneas de evolución individual (comportamiento día a día):")
+                            with col2:
+                                max_lines_db = st.selectbox(
+                                    "Líneas:", 
+                                    options=list(range(1, min(16, len(super_filtered_db) + 1))),
+                                    index=min(4, len(super_filtered_db) - 1),
+                                    key="max_lines_evolution_db"
+                                )
+                            
+                            # Tomar los primeros N pallets
+                            pallets_to_show_db = super_filtered_db.head(max_lines_db)
+                            
+                            # Crear gráfico de líneas múltiples
+                            fig_lines_db = go.Figure()
+                            
+                            colors_db = px.colors.qualitative.Set1[:max_lines_db]
+                            
+                            for idx, (_, row) in enumerate(pallets_to_show_db.iterrows()):
+                                codigo_pallet = str(row["Codigo"]) + "_" + str(row["ID_Pallet"])
+
+                                # Extraer valores y fechas válidas
+                                valores = []
+                                fechas_validas = []
+
+                                for fecha in sorted(date_cols_db):
+                                    valor = row[fecha]
+                                    try:
+                                        valor_num = pd.to_numeric(valor, errors='coerce')
+                                        if pd.notna(valor_num) and valor_num != 0:
+                                            valores.append(valor_num)
+                                            fechas_validas.append(fecha)
+                                    except:
+                                        continue
+
+                                # Agregar línea si hay datos
+                                if valores and fechas_validas:
+                                    fig_lines_db.add_trace(go.Scatter(
+                                        x=fechas_validas,
+                                        y=valores,
+                                        mode='lines+markers',
+                                        name=codigo_pallet,
+                                        line=dict(width=3, color=colors_db[idx % len(colors_db)]),
+                                        marker=dict(size=6),
+                                        hovertemplate="<b>%{fullData.name}</b><br>" +
+                                                    "Fecha: %{x}<br>" +
+                                                    "Cantidad: %{y}<br>" +
+                                                    "<extra></extra>"
+                                    ))
+
+                            fig_lines_db.update_layout(
+                                title=f"Comportamiento Diario Individual - {max_lines_db} Pallets",
+                                xaxis_title="Fecha",
+                                yaxis_title="Cantidad Negativa",
+                                height=450,
+                                hovermode='x unified',
+                                legend=dict(
+                                    yanchor="top",
+                                    y=0.99,
+                                    xanchor="left",
+                                    x=1.01
+                                )
+                            )
+
+                            st.plotly_chart(fig_lines_db, use_container_width=True)
+
+                            st.info(f"Cada línea representa la evolución diaria de un pallet específico. " +
+                                   f"Mostrando {max_lines_db} de {len(super_filtered_db)} pallets filtrados.")
+                    
+                    # Botón de descarga específico del súper análisis filtrado
+                    st.markdown("---")
+                    csv_super_db = super_display_db.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Descargar Súper Análisis Filtrado (CSV)",
+                        data=csv_super_db,
+                        file_name=f"Super_Analisis_DB_Filtrado_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                        mime="text/csv",
+                        help="Descarga los datos filtrados actualmente mostrados en formato CSV"
+                    )
+                else:
+                    st.warning("No hay datos que coincidan con los filtros aplicados.")
+            
+            with tab4:
+                st.subheader("Datos Crudos Procesados")
+                st.dataframe(df_total, width='stretch', height=400)
+            
+            # Descarga de reporte
+            st.subheader("💾 Descargar Reporte")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                excel_buffer = generate_excel_report(analisis, super_analisis, reincidencias, df_total, top_n)
+                st.download_button(
+                    label="📊 Descargar Reporte Excel",
+                    data=excel_buffer,
+                    file_name=f"Reporte_Inventarios_DB_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            
+            with col2:
+                csv_data = analisis.to_csv(index=False)
+                st.download_button(
+                    label="📄 Descargar CSV",
+                    data=csv_data,
+                    file_name=f"Analisis_DB_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv"
+                )
+
     # ========== MODO 2: ANÁLISIS DE INVENTARIOS (ORIGINAL) ==========
     else:
         # Sidebar para configuración
@@ -1093,15 +2053,21 @@ def main():
 
             # Upload de archivos
             uploaded_files = st.file_uploader(
-                "📁 Subir archivos Excel",
-                type=['xlsx', 'xls'],
+                "📁 Subir archivos Excel o Base de Datos (.db)",
+                type=['xlsx', 'xls', 'db', 'sqlite', 'sqlite3'],
                 accept_multiple_files=True,
-                help="Selecciona uno o más reportes de inventario en formato Excel"
+                help="Selecciona archivos Excel o un archivo .db consolidado"
             )
 
             # Configuraciones
             top_n = st.slider("🔝 Top N para análisis", 5, 50, 10)
-            sheet_index = st.number_input("📋 Índice de hoja Excel", 0, 10, 1)
+            sheet_number_analyze = st.number_input(
+                "📋 Número de hoja Excel", 
+                1, 10, 2,
+                help="La hoja del Excel donde están los datos (2 = 'Inventario Completo (Actual)')"
+            )
+            # Convertir a índice
+            sheet_index = sheet_number_analyze - 1
 
             # Filtros
             st.subheader("🔍 Filtros")
@@ -1126,8 +2092,40 @@ def main():
                 st.session_state.progress_placeholder = progress_placeholder
 
                 with st.spinner("Procesando archivos..."):
-                    # Procesar datos
-                    df_total = analyzer.process_uploaded_files(uploaded_files)
+                    # Separar archivos .db de archivos Excel
+                    db_files = [f for f in uploaded_files if f.name.endswith(('.db', '.sqlite', '.sqlite3'))]
+                    excel_files = [f for f in uploaded_files if f.name.endswith(('.xlsx', '.xls'))]
+                    
+                    all_dataframes = []
+                    
+                    # Procesar archivos .db si hay
+                    if db_files:
+                        for db_file in db_files:
+                            analyzer.log(f"Leyendo base de datos: {db_file.name}")
+                            db_content = db_file.read()
+                            df_from_db, success, error = read_db_file(db_content)
+                            
+                            if success and df_from_db is not None:
+                                all_dataframes.append(df_from_db)
+                                analyzer.log(f"✅ {db_file.name}: {len(df_from_db)} registros")
+                            else:
+                                analyzer.log(f"❌ Error en {db_file.name}: {error}")
+                    
+                    # Procesar archivos Excel si hay
+                    if excel_files:
+                        df_from_excel = analyzer.process_uploaded_files(excel_files)
+                        all_dataframes.append(df_from_excel)
+                    
+                    # Combinar todos los datos
+                    if all_dataframes:
+                        df_total = pd.concat(all_dataframes, ignore_index=True)
+                    else:
+                        raise ValueError("No se pudieron procesar archivos válidos")
+                    
+                    # Normalizar datos
+                    df_total = analyzer.normalize_data(df_total)
+                    
+                    # Continuar con análisis
                     analisis = analyzer.analyze_pallets(df_total)
                     super_analisis = analyzer.create_super_analysis(df_total)
                     reincidencias = analyzer.detect_recurrences(df_total)
@@ -1138,10 +2136,18 @@ def main():
                     st.session_state.super_analisis = super_analisis
                     st.session_state.reincidencias = reincidencias
 
-                progress_placeholder.success("✅ Análisis completado!")
+                # Mensaje de éxito personalizado
+                if db_files and excel_files:
+                    progress_placeholder.success(f"✅ Análisis completado: {len(db_files)} archivo(s) .db + {len(excel_files)} archivo(s) Excel")
+                elif db_files:
+                    progress_placeholder.success(f"✅ Análisis completado desde {len(db_files)} archivo(s) .db")
+                else:
+                    progress_placeholder.success("✅ Análisis completado!")
 
             except Exception as e:
                 st.error(f"❌ Error en el análisis: {e}")
+                import traceback
+                st.error(traceback.format_exc())
                 return
 
         # Mostrar resultados si existen datos
@@ -1662,10 +2668,10 @@ def main():
         if not uploaded_files:
             # Instrucciones de uso
             st.info("""
-            👋 **Bienvenido al Analizador de Inventarios Negativos v6.1 Web**
+            👋 **Bienvenido al Analizador de Inventarios Negativos v6.3 Database Edition**
             
             Para comenzar:
-            1. 📁 Sube uno o más archivos Excel en la barra lateral
+            1. 📁 Sube archivos Excel **o** un archivo .db en la barra lateral
             2. ⚙️ Configura los parámetros de análisis
             3. 🚀 Haz clic en "Ejecutar Análisis"
             4. 📊 Explora los resultados y descarga reportes
@@ -1678,9 +2684,13 @@ def main():
             - ✅ Reportes descargables listos para imprimir
             - ✅ Interfaz responsiva y optimizada
             
-            **Nuevo en v6.1:**
-            - 🔧 Navegación mejorada sin saltos de pantalla
-            - 🎯 Experiencia de usuario más fluida
+            **Nuevo en v6.3:**
+            - 🗄️ Acepta archivos Excel **Y** archivos .db
+            - 💾 Puedes combinar archivos .db + Excel en el mismo análisis
+            - 🗄️ Consolida múltiples Excel en base de datos .db
+            - ➕ Agregar nuevos Excel a .db existente
+            - 📅 Extracción automática de fechas del nombre de archivo
+            - 🚀 Preparado para integración con ERP del área de sistemas
             """)
 
 if __name__ == "__main__":
