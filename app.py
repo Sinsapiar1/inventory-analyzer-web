@@ -11,12 +11,344 @@ from datetime import datetime, timedelta
 import warnings
 from pathlib import Path
 import zipfile
+import re
+
+# Google Drive API
+try:
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaIoBaseDownload
+    import pickle
+    import os
+    GOOGLE_DRIVE_AVAILABLE = True
+except ImportError:
+    GOOGLE_DRIVE_AVAILABLE = False
 
 warnings.filterwarnings("ignore")
 
 # Configurar pandas para mejor rendimiento
 pd.set_option('display.precision', 2)
 pd.set_option('mode.chained_assignment', None)
+
+# ========== GOOGLE DRIVE INTEGRATION ==========
+
+# Configuración de Google Drive
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+FOLDER_ID = '1eSbNu-PbBC5ikiJsMetM58GdUsR1eRz1'  # Tu carpeta de Google Drive
+
+def authenticate_google_drive():
+    """Autenticar con Google Drive usando credenciales guardadas"""
+    creds = None
+    
+    # Intentar cargar token guardado
+    if 'google_drive_token' in st.session_state:
+        try:
+            creds = pickle.loads(st.session_state.google_drive_token)
+        except:
+            pass
+    
+    # Si no hay credenciales válidas, intentar autenticar
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+            except:
+                return None
+        else:
+            # Para Streamlit Cloud, usar secrets
+            try:
+                if 'google_credentials' in st.secrets:
+                    import json
+                    credentials_dict = json.loads(st.secrets["google_credentials"])
+                    flow = InstalledAppFlow.from_client_config(
+                        credentials_dict,
+                        SCOPES
+                    )
+                    # Para local, usar servidor local
+                    # Para cloud, necesitarás un flujo diferente
+                    creds = flow.run_local_server(port=0)
+                else:
+                    return None
+            except:
+                return None
+        
+        # Guardar token en session_state
+        if creds:
+            st.session_state.google_drive_token = pickle.dumps(creds)
+    
+    if creds:
+        return build('drive', 'v3', credentials=creds)
+    return None
+
+@st.cache_data(ttl=300)  # Cache por 5 minutos
+def list_files_from_drive_folder(_service, folder_id):
+    """Listar archivos Excel de la carpeta de Google Drive"""
+    try:
+        # Query para buscar archivos Excel en la carpeta
+        query = (
+            f"'{folder_id}' in parents and "
+            f"(mimeType='application/vnd.ms-excel' or "
+            f"mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') and "
+            f"trashed=false"
+        )
+        
+        results = _service.files().list(
+            q=query,
+            pageSize=100,
+            fields="files(id, name, createdTime, modifiedTime, size)",
+            orderBy='modifiedTime desc'
+        ).execute()
+        
+        files = results.get('files', [])
+        return files
+    except Exception as e:
+        st.error(f"Error al listar archivos: {e}")
+        return []
+
+def download_file_from_drive(service, file_id):
+    """Descargar archivo de Google Drive en memoria"""
+    try:
+        request = service.files().get_media(fileId=file_id)
+        file_buffer = io.BytesIO()
+        downloader = MediaIoBaseDownload(file_buffer, request)
+        
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+        
+        file_buffer.seek(0)
+        return file_buffer
+    except Exception as e:
+        st.error(f"Error al descargar archivo: {e}")
+        return None
+
+def extract_date_from_filename(filename):
+    """Extraer fecha del nombre del archivo formato MM-DD-YYYY.xlsx"""
+    try:
+        # Buscar patrón MM-DD-YYYY
+        match = re.search(r'(\d{1,2})-(\d{1,2})-(\d{4})', filename)
+        if match:
+            month, day, year = match.groups()
+            return datetime(int(year), int(month), int(day))
+        else:
+            # Si no encuentra el patrón, usar fecha actual
+            return datetime.now()
+    except:
+        return datetime.now()
+
+def process_drive_excel_file(file_buffer, filename):
+    """Procesar archivo Excel de Google Drive"""
+    try:
+        # Detectar fecha del nombre del archivo
+        fecha_reporte = extract_date_from_filename(filename)
+        
+        # Leer la hoja específica: "PBI4. Gestión Negativos, Tabl"
+        df = pd.read_excel(file_buffer, sheet_name="PBI4. Gestión Negativos, Tabl")
+        
+        # Mapear columnas del formato Dataverse al formato de la app
+        column_mapping = {
+            "CompanyId": "Company",
+            "InventLocationId": "Almacen",
+            "ProductId": "Codigo",
+            "ProductName_es": "Nombre",
+            "LabelId": "ID_Pallet",
+            "Stock": "Cantidad_Negativa",
+            "CostStock": "Costo"
+        }
+        
+        df = df.rename(columns=column_mapping)
+        
+        # FILTRAR SOLO NEGATIVOS (Stock < 0)
+        df = df[df["Cantidad_Negativa"] < 0].copy()
+        
+        # Agregar información de fecha y archivo
+        df["Fecha_Reporte"] = pd.to_datetime(fecha_reporte)
+        df["Archivo_Origen"] = filename
+        
+        # Limpiar y normalizar datos
+        df["Codigo"] = df["Codigo"].astype(str).str.strip()
+        df["ID_Pallet"] = df["ID_Pallet"].fillna("").astype(str).str.strip()
+        df["Almacen"] = df["Almacen"].astype(str).str.strip()
+        df["Nombre"] = df["Nombre"].fillna("").astype(str).str.strip()
+        
+        # Crear ID único
+        df["ID_Unico_Pallet"] = (
+            df["Codigo"].astype(str) + "_" + 
+            df["ID_Pallet"].astype(str)
+        )
+        
+        return df, True, None
+        
+    except Exception as e:
+        return None, False, str(e)
+
+def create_automatic_dashboard(analisis, super_analisis, df_total):
+    """Dashboard específico para modo automático de Google Drive"""
+    
+    st.markdown("---")
+    st.subheader("📊 Dashboard Automático - Google Drive")
+    
+    # KPIs principales
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        total_archivos = df_total['Archivo_Origen'].nunique()
+        st.metric("📁 Archivos Procesados", total_archivos)
+    
+    with col2:
+        fecha_min = df_total['Fecha_Reporte'].min().strftime("%d/%m/%Y")
+        fecha_max = df_total['Fecha_Reporte'].max().strftime("%d/%m/%Y")
+        st.metric("📅 Rango de Fechas", f"{fecha_min} - {fecha_max}")
+    
+    with col3:
+        total_negativos = len(analisis)
+        st.metric("⚠️ Productos Negativos", f"{total_negativos:,}")
+    
+    with col4:
+        activos = (analisis["Estado"] == "Activo").sum()
+        st.metric("🔴 Activos Hoy", activos)
+    
+    # Tendencia diaria
+    st.markdown("---")
+    st.subheader("📈 Evolución Temporal")
+    
+    # Agrupar por fecha
+    daily_stats = df_total.groupby('Fecha_Reporte').agg({
+        'ID_Unico_Pallet': 'nunique',
+        'Cantidad_Negativa': 'sum',
+        'Archivo_Origen': 'first'
+    }).reset_index()
+    
+    daily_stats.columns = ['Fecha', 'Productos_Unicos', 'Total_Negativo', 'Archivo']
+    daily_stats['Total_Negativo'] = daily_stats['Total_Negativo'].abs()
+    
+    # Gráfico de evolución
+    fig_evolution = go.Figure()
+    
+    fig_evolution.add_trace(go.Scatter(
+        x=daily_stats['Fecha'],
+        y=daily_stats['Productos_Unicos'],
+        mode='lines+markers',
+        name='Productos Únicos',
+        line=dict(color='#ff4444', width=3),
+        marker=dict(size=8),
+        yaxis='y1'
+    ))
+    
+    fig_evolution.add_trace(go.Bar(
+        x=daily_stats['Fecha'],
+        y=daily_stats['Total_Negativo'],
+        name='Total Negativo (Magnitud)',
+        marker_color='rgba(255, 68, 68, 0.3)',
+        yaxis='y2'
+    ))
+    
+    fig_evolution.update_layout(
+        title='Evolución Diaria de Inventarios Negativos',
+        xaxis_title='Fecha',
+        yaxis=dict(
+            title='Productos Únicos',
+            side='left'
+        ),
+        yaxis2=dict(
+            title='Total Negativo (Magnitud)',
+            side='right',
+            overlaying='y'
+        ),
+        hovermode='x unified',
+        height=450
+    )
+    
+    st.plotly_chart(fig_evolution, use_container_width=True)
+    
+    # Distribución por Almacén
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("🏢 Por Almacén")
+        almacen_stats = df_total.groupby('Almacen').agg({
+            'ID_Unico_Pallet': 'nunique',
+            'Cantidad_Negativa': 'sum'
+        }).reset_index()
+        almacen_stats.columns = ['Almacén', 'Productos', 'Total_Negativo']
+        almacen_stats['Total_Negativo'] = almacen_stats['Total_Negativo'].abs()
+        almacen_stats = almacen_stats.sort_values('Total_Negativo', ascending=False).head(10)
+        
+        fig_almacen = px.bar(
+            almacen_stats,
+            x='Almacén',
+            y='Total_Negativo',
+            title='Top 10 Almacenes con Mayor Inventario Negativo',
+            color='Total_Negativo',
+            color_continuous_scale='Reds'
+        )
+        st.plotly_chart(fig_almacen, use_container_width=True)
+    
+    with col2:
+        st.subheader("🏭 Por Compañía")
+        company_stats = df_total.groupby('Company').agg({
+            'ID_Unico_Pallet': 'nunique',
+            'Cantidad_Negativa': 'sum'
+        }).reset_index()
+        company_stats.columns = ['Compañía', 'Productos', 'Total_Negativo']
+        company_stats['Total_Negativo'] = company_stats['Total_Negativo'].abs()
+        
+        fig_company = px.pie(
+            company_stats,
+            values='Total_Negativo',
+            names='Compañía',
+            title='Distribución por Compañía'
+        )
+        st.plotly_chart(fig_company, use_container_width=True)
+    
+    # Top productos más críticos
+    st.markdown("---")
+    st.subheader("🔥 Top 20 Productos Más Críticos")
+    
+    top_products = analisis.sort_values('Score_Criticidad', ascending=False).head(20)
+    
+    fig_top = px.bar(
+        top_products,
+        x='ID_Unico_Pallet',
+        y='Score_Criticidad',
+        color='Severidad',
+        title='Ranking de Productos Críticos',
+        hover_data=['Nombre', 'Almacen', 'Dias_Acumulados']
+    )
+    fig_top.update_layout(xaxis_tickangle=-45, height=400)
+    st.plotly_chart(fig_top, use_container_width=True)
+    
+    # Tabla resumen
+    st.markdown("---")
+    st.subheader("📋 Resumen por Archivo")
+    
+    file_summary = []
+    for archivo in df_total['Archivo_Origen'].unique():
+        df_file = df_total[df_total['Archivo_Origen'] == archivo]
+        fecha = df_file['Fecha_Reporte'].iloc[0]
+        
+        file_summary.append({
+            'Archivo': archivo,
+            'Fecha': fecha.strftime('%d/%m/%Y'),
+            'Productos_Negativos': len(df_file),
+            'Total_Negativo': abs(df_file['Cantidad_Negativa'].sum()),
+            'Almacenes': df_file['Almacen'].nunique()
+        })
+    
+    summary_df = pd.DataFrame(file_summary)
+    summary_df = summary_df.sort_values('Fecha', ascending=False)
+    
+    st.dataframe(
+        summary_df.style.format({
+            'Total_Negativo': '{:,.0f}',
+            'Productos_Negativos': '{:,.0f}'
+        }),
+        use_container_width=True,
+        height=300
+    )
 
 # Funciones auxiliares con caché
 @st.cache_data
@@ -943,8 +1275,12 @@ def main():
     st.sidebar.title("🎯 Modo de Operación")
     modo = st.sidebar.radio(
         "Selecciona el modo:",
-        ["📥 Preprocesar Datos ERP", "📊 Analizar Inventarios"],
-        help="Preprocesar: Transforma datos crudos del ERP | Analizar: Procesa reportes ya formateados"
+        [
+            "📥 Preprocesar Datos ERP", 
+            "📊 Analizar Inventarios",
+            "🤖 Historial Automático Google Drive"
+        ],
+        help="Preprocesar: Transforma datos crudos del ERP | Analizar: Procesa reportes ya formateados | Google Drive: Carga automática desde carpeta sincronizada"
     )
 
     st.sidebar.markdown("---")
@@ -1682,6 +2018,265 @@ def main():
             - 🔧 Navegación mejorada sin saltos de pantalla
             - 🎯 Experiencia de usuario más fluida
             """)
+    
+    # ========== MODO 3: HISTORIAL AUTOMÁTICO GOOGLE DRIVE ==========
+    elif modo == "🤖 Historial Automático Google Drive":
+        st.subheader("🤖 Historial Automático - Google Drive")
+        
+        # Verificar si Google Drive está disponible
+        if not GOOGLE_DRIVE_AVAILABLE:
+            st.error("""
+            ❌ **Google Drive API no está disponible**
+            
+            Para usar este modo, necesitas instalar las dependencias:
+            ```
+            pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+            ```
+            """)
+            st.stop()
+        
+        st.info("""
+        📡 **Conexión Automática con Google Drive**
+        
+        Esta función se conecta automáticamente a tu carpeta de Google Drive sincronizada desde SharePoint
+        y procesa todos los archivos Excel disponibles.
+        
+        **Carpeta sincronizada:** `SharePoint → Google Drive`  
+        **Formato de archivos:** `MM-DD-YYYY.xlsx` (ejemplo: `10-21-2025.xlsx`)  
+        **Hoja procesada:** `PBI4. Gestión Negativos, Tabl`
+        """)
+        
+        # Botón para conectar y cargar
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            if st.button("🔄 Conectar y Cargar Archivos", type="primary", use_container_width=True):
+                st.session_state.load_from_drive = True
+        
+        with col2:
+            if st.button("🗑️ Limpiar Caché", use_container_width=True):
+                st.cache_data.clear()
+                if 'drive_data' in st.session_state:
+                    del st.session_state.drive_data
+                st.success("✅ Caché limpiado")
+        
+        with col3:
+            max_files = st.number_input("Max archivos", min_value=5, max_value=100, value=30, step=5)
+        
+        # Procesar si se solicitó
+        if st.session_state.get('load_from_drive', False):
+            
+            with st.spinner("🔐 Autenticando con Google Drive..."):
+                service = authenticate_google_drive()
+            
+            if not service:
+                st.error("""
+                ❌ **No se pudo autenticar con Google Drive**
+                
+                **Para usar en LOCAL:**
+                1. Crea un proyecto en [Google Cloud Console](https://console.cloud.google.com)
+                2. Habilita Google Drive API
+                3. Crea credenciales OAuth 2.0 (Desktop app)
+                4. Descarga el JSON como `credentials.json` en la carpeta del proyecto
+                5. Ejecuta la app y autoriza el acceso
+                
+                **Para usar en Streamlit Cloud:**
+                1. Agrega las credenciales en Secrets (Settings → Secrets)
+                2. Formato:
+                ```toml
+                [google_credentials]
+                type = "service_account"
+                project_id = "tu-proyecto"
+                private_key_id = "..."
+                private_key = "..."
+                client_email = "..."
+                client_id = "..."
+                auth_uri = "..."
+                token_uri = "..."
+                ```
+                
+                📚 [Más información](https://docs.streamlit.io/streamlit-community-cloud/get-started/deploy-an-app/connect-to-data-sources/secrets-management)
+                """)
+                st.stop()
+            
+            st.success("✅ Conectado con Google Drive")
+            
+            # Listar archivos
+            with st.spinner("📁 Listando archivos de la carpeta..."):
+                files = list_files_from_drive_folder(service, FOLDER_ID)
+            
+            if not files:
+                st.warning("⚠️ No se encontraron archivos Excel en la carpeta")
+                st.stop()
+            
+            st.success(f"✅ Se encontraron {len(files)} archivos")
+            
+            # Mostrar archivos encontrados
+            with st.expander(f"📋 Ver {len(files)} archivos disponibles", expanded=False):
+                file_list_data = []
+                for f in files:
+                    file_list_data.append({
+                        'Nombre': f['name'],
+                        'Fecha Modificación': f['modifiedTime'][:10],
+                        'Tamaño (KB)': round(int(f.get('size', 0)) / 1024, 2)
+                    })
+                st.dataframe(pd.DataFrame(file_list_data), use_container_width=True)
+            
+            # Limitar cantidad de archivos
+            files_to_process = files[:max_files]
+            
+            st.info(f"🔄 Procesando los {len(files_to_process)} archivos más recientes...")
+            
+            # Procesar archivos
+            all_data = []
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            for idx, file_info in enumerate(files_to_process):
+                file_id = file_info['id']
+                file_name = file_info['name']
+                
+                status_text.text(f"Procesando {idx + 1}/{len(files_to_process)}: {file_name}")
+                
+                try:
+                    # Descargar archivo
+                    file_buffer = download_file_from_drive(service, file_id)
+                    
+                    if file_buffer:
+                        # Procesar archivo
+                        df, success, error = process_drive_excel_file(file_buffer, file_name)
+                        
+                        if success and df is not None and len(df) > 0:
+                            all_data.append(df)
+                            st.success(f"✅ {file_name}: {len(df)} productos negativos", icon="✅")
+                        elif success and len(df) == 0:
+                            st.info(f"ℹ️ {file_name}: Sin productos negativos", icon="ℹ️")
+                        else:
+                            st.warning(f"⚠️ {file_name}: {error}", icon="⚠️")
+                
+                except Exception as e:
+                    st.error(f"❌ Error en {file_name}: {str(e)}", icon="❌")
+                
+                progress_bar.progress((idx + 1) / len(files_to_process))
+            
+            status_text.empty()
+            progress_bar.empty()
+            
+            if not all_data:
+                st.error("❌ No se pudieron procesar archivos con datos negativos")
+                st.stop()
+            
+            # Combinar todos los datos
+            st.success(f"✅ Procesamiento completado: {len(all_data)} archivos con datos negativos")
+            
+            with st.spinner("🔍 Ejecutando análisis..."):
+                df_total = pd.concat(all_data, ignore_index=True)
+                
+                # Usar las funciones de análisis existentes
+                analisis = analyze_pallets_data(df_total)
+                super_analisis = df_total.pivot_table(
+                    index=["Codigo", "Nombre", "ID_Pallet", "Almacen"],
+                    columns="Fecha_Reporte", 
+                    values="Cantidad_Negativa",
+                    aggfunc="first"
+                ).reset_index()
+                
+                # Guardar en session_state
+                st.session_state.drive_data = {
+                    'df_total': df_total,
+                    'analisis': analisis,
+                    'super_analisis': super_analisis
+                }
+            
+            st.success("✅ Análisis completado")
+        
+        # Mostrar dashboard si hay datos
+        if 'drive_data' in st.session_state:
+            data = st.session_state.drive_data
+            df_total = data['df_total']
+            analisis = data['analisis']
+            super_analisis = data['super_analisis']
+            
+            # Dashboard automático
+            create_automatic_dashboard(analisis, super_analisis, df_total)
+            
+            # Tabs adicionales
+            st.markdown("---")
+            tab1, tab2, tab3 = st.tabs([
+                "📊 Análisis Detallado",
+                "📈 Súper Análisis",
+                "💾 Exportar Datos"
+            ])
+            
+            with tab1:
+                st.subheader("Análisis Detallado por Producto")
+                
+                # Filtros
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    filter_almacen = st.selectbox(
+                        "Filtrar por Almacén:",
+                        ["Todos"] + sorted(analisis['Almacen'].unique().tolist())
+                    )
+                with col2:
+                    filter_severidad = st.selectbox(
+                        "Filtrar por Severidad:",
+                        ["Todas", "Crítico", "Alto", "Medio", "Bajo"]
+                    )
+                with col3:
+                    filter_estado = st.selectbox(
+                        "Filtrar por Estado:",
+                        ["Todos", "Activo", "Resuelto"]
+                    )
+                
+                # Aplicar filtros
+                analisis_filtered = analisis.copy()
+                if filter_almacen != "Todos":
+                    analisis_filtered = analisis_filtered[analisis_filtered["Almacen"] == filter_almacen]
+                if filter_severidad != "Todas":
+                    analisis_filtered = analisis_filtered[analisis_filtered["Severidad"] == filter_severidad]
+                if filter_estado != "Todos":
+                    analisis_filtered = analisis_filtered[analisis_filtered["Estado"] == filter_estado]
+                
+                st.dataframe(analisis_filtered, use_container_width=True, height=400)
+            
+            with tab2:
+                st.subheader("Súper Análisis - Evolución Temporal")
+                st.dataframe(super_analisis, use_container_width=True, height=500)
+            
+            with tab3:
+                st.subheader("💾 Exportar Resultados")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Excel completo
+                    excel_buffer = generate_excel_report(
+                        analisis, 
+                        super_analisis, 
+                        pd.DataFrame(),  # reincidencias vacío por ahora
+                        df_total, 
+                        top_n=20
+                    )
+                    
+                    st.download_button(
+                        label="📊 Descargar Reporte Excel Completo",
+                        data=excel_buffer,
+                        file_name=f"Reporte_GoogleDrive_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                
+                with col2:
+                    # CSV simple
+                    csv_data = analisis.to_csv(index=False)
+                    st.download_button(
+                        label="📄 Descargar CSV Simple",
+                        data=csv_data,
+                        file_name=f"Analisis_GoogleDrive_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
 
 if __name__ == "__main__":
     main()
