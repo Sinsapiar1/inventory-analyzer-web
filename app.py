@@ -1861,12 +1861,12 @@ def main():
                 ultima_fecha = df_historico["fecha"].max()
                 df_ultimo_dia = df_historico[df_historico["fecha"] == ultima_fecha]
                 
-                # DEBUG: Verificar unidades del 612D
-                with st.expander("🔍 Debug: Verificar Unidades 612D", expanded=True):
-                    st.write("### Análisis de Stock Negativo - Almacén 612D")
+                # DEBUG: Verificar unidades del 61D
+                with st.expander("🔍 Debug: Verificar Unidades 61D", expanded=True):
+                    st.write("### Análisis de Stock Negativo - Almacén 61D")
                     
                     # Del df_historico original (último día)
-                    df_612d_ultimo = df_ultimo_dia[df_ultimo_dia["InventLocationId"] == "612D"]
+                    df_612d_ultimo = df_ultimo_dia[df_ultimo_dia["InventLocationId"] == "61D"]
                     df_612d_negativos = df_612d_ultimo[df_612d_ultimo["Stock"] < 0]
                     
                     total_stock_original = abs(df_612d_negativos["Stock"].sum())
