@@ -1895,9 +1895,9 @@ def main():
                     st.metric("Productos Únicos", f"{productos_ultimo_dia:,}",
                              help=f"{productos_negativos:,} con stock negativo")
                 
-                # RESUMEN DE COSTOS POR ZONA CON VISUALIZACIÓN PROFESIONAL
+                # RESUMEN DE COSTOS POR ZONA - VERSIÓN LIMPIA Y PROFESIONAL
                 st.markdown("---")
-                st.markdown("### 💰 Panorama de Costos por Zona/Compañía")
+                st.markdown("### 💰 Análisis de Costos por Zona")
                 
                 # Calcular datos
                 costos_resumen = df_ultimo_dia[df_ultimo_dia["Stock"] < 0].groupby("CompanyId").agg({
@@ -1911,38 +1911,54 @@ def main():
                 costos_resumen["Stock_Abs"] = costos_resumen["Stock"].abs()
                 costos_resumen = costos_resumen.sort_values("CostStock_Abs", ascending=False)
                 
-                # Visualización combinada
-                col1, col2 = st.columns([2, 1])
+                # Gráfico principal de barras (ancho completo)
+                fig_costos_zona = px.bar(
+                    costos_resumen.head(10),
+                    x="CostStock_Abs",
+                    y="CompanyId",
+                    orientation='h',
+                    title=f"🏆 Top 10 Zonas por Impacto Económico - {ultima_fecha.strftime('%d/%m/%Y')}",
+                    labels={"CostStock_Abs": "Costo de Inventario Negativo ($)", "CompanyId": "Zona"},
+                    color="CostStock_Abs",
+                    color_continuous_scale=["#90EE90", "#FFD700", "#FF6347"],
+                    text="CostStock_Abs"
+                )
+                fig_costos_zona.update_traces(
+                    texttemplate='$%{text:,.0f}', 
+                    textposition='outside',
+                    marker_line_color='rgba(0,0,0,0.2)',
+                    marker_line_width=1
+                )
+                fig_costos_zona.update_layout(
+                    height=400, 
+                    showlegend=False,
+                    yaxis={'categoryorder':'total ascending'},
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font=dict(size=12)
+                )
+                st.plotly_chart(fig_costos_zona, use_container_width=True)
                 
-                with col1:
-                    # Gráfico de barras con costo
-                    fig_costos_zona_main = px.bar(
-                        costos_resumen.head(10),
-                        x="CostStock_Abs",
-                        y="CompanyId",
-                        orientation='h',
-                        title="Top 10 Zonas por Impacto Económico",
-                        labels={"CostStock_Abs": "Costo del Inventario Negativo ($)", "CompanyId": "Zona"},
-                        color="CostStock_Abs",
-                        color_continuous_scale=["#90EE90", "#FFD700", "#FF6347"],
-                        text="CostStock_Abs"
-                    )
-                    fig_costos_zona_main.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
-                    fig_costos_zona_main.update_layout(height=400, showlegend=False)
-                    st.plotly_chart(fig_costos_zona_main, use_container_width=True)
+                # Tabla resumen debajo
+                st.markdown("#### 📋 Resumen Detallado por Zona")
                 
-                with col2:
-                    # Tabla resumen compacta con métricas clave
-                    st.markdown("#### 📊 Métricas por Zona")
-                    for idx, row in costos_resumen.head(5).iterrows():
-                        with st.container():
-                            st.markdown(f"""
-                            <div style="background: #f8f9fa; padding: 10px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #667eea;">
-                                <strong style="font-size: 16px; color: #667eea;">{row['CompanyId']}</strong><br>
-                                <span style="font-size: 14px;">💰 ${row['CostStock_Abs']:,.0f}</span><br>
-                                <span style="font-size: 12px; color: #666;">📦 {int(row['ProductId'])} productos | 🏢 {int(row['InventLocationId'])} almacenes</span>
-                            </div>
-                            """, unsafe_allow_html=True)
+                tabla_resumen = costos_resumen.copy()
+                tabla_resumen = tabla_resumen.rename(columns={
+                    "CompanyId": "Zona",
+                    "CostStock_Abs": "Costo Total ($)",
+                    "Stock_Abs": "Unidades Negativas",
+                    "ProductId": "Productos",
+                    "InventLocationId": "Almacenes"
+                })
+                tabla_resumen["Costo Total ($)"] = tabla_resumen["Costo Total ($)"].apply(lambda x: f"${x:,.0f}")
+                tabla_resumen["Unidades Negativas"] = tabla_resumen["Unidades Negativas"].apply(lambda x: f"{x:,.0f}")
+                
+                st.dataframe(
+                    tabla_resumen[["Zona", "Costo Total ($)", "Unidades Negativas", "Productos", "Almacenes"]],
+                    use_container_width=True,
+                    height=250,
+                    hide_index=True
+                )
                 
                 st.markdown("---")
                 
@@ -2031,18 +2047,25 @@ def main():
                         col1, col2, col3, col4 = st.columns(4)
                         
                         with col1:
+                            st.markdown("**🎚️ Opciones de Filtrado**")
                             solo_negativos_hist = st.checkbox(
                                 "🔴 Solo Stock Negativo",
                                 value=True,
                                 key="solo_negativos_hist",
                                 help="Filtrar solo registros con Stock < 0"
                             )
+                            solo_activos_hist = st.checkbox(
+                                "✅ Solo Activos (Último Día)",
+                                value=True,
+                                key="solo_activos_hist",
+                                help="Mostrar solo productos con movimiento en la última fecha"
+                            )
                         
                         with col2:
                             codigos_excluir_hist = st.text_area(
                                 "❌ Excluir códigos:",
                                 key="codigos_excluir_hist",
-                                height=60,
+                                height=100,
                                 placeholder="67312, 87947, ..."
                             )
                         
@@ -2050,7 +2073,7 @@ def main():
                             codigos_incluir_hist = st.text_area(
                                 "✅ Solo incluir códigos:",
                                 key="codigos_incluir_hist",
-                                height=60,
+                                height=100,
                                 placeholder="67057, 67498, ..."
                             )
                         
@@ -2168,9 +2191,9 @@ def main():
                         hide_index=True
                     )
                     
-                    # ESTADÍSTICAS CON TARJETAS PROFESIONALES
+                    # PANEL DE CONTROL - VISTA FILTRADA
                     st.markdown("---")
-                    st.markdown("### 📊 Panel de Control - Vista Filtrada")
+                    st.markdown("### 📊 Resumen de Datos Filtrados")
                     
                     # Calcular métricas
                     fecha_max_filtrada = df_filtered["fecha"].max()
@@ -2182,65 +2205,60 @@ def main():
                     almacenes_vista = historico_pivot["Almacen"].nunique()
                     zonas_vista = historico_pivot["Zona"].nunique()
                     
-                    # Tarjetas principales en 2 filas
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                                    padding: 20px; border-radius: 10px; color: white; text-align: center;">
-                            <h4 style="margin: 0; font-size: 16px;">💰 IMPACTO ECONÓMICO</h4>
-                            <h1 style="margin: 10px 0; font-size: 32px;">${costo_filtrado:,.0f}</h1>
-                            <p style="margin: 0; font-size: 12px; opacity: 0.9;">{fecha_max_filtrada.strftime('%d/%m/%Y')}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    with col2:
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); 
-                                    padding: 20px; border-radius: 10px; color: white; text-align: center;">
-                            <h4 style="margin: 0; font-size: 16px;">📦 UNIDADES NEGATIVAS</h4>
-                            <h1 style="margin: 10px 0; font-size: 32px;">{total_stock_ultimo:,.0f}</h1>
-                            <p style="margin: 0; font-size: 12px; opacity: 0.9;">Stock negativo total</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    with col3:
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); 
-                                    padding: 20px; border-radius: 10px; color: white; text-align: center;">
-                            <h4 style="margin: 0; font-size: 16px;">🎯 COBERTURA</h4>
-                            <h1 style="margin: 10px 0; font-size: 32px;">{zonas_vista} / {almacenes_vista}</h1>
-                            <p style="margin: 0; font-size: 12px; opacity: 0.9;">Zonas / Almacenes</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    
-                    # Tarjetas secundarias
+                    # Métricas principales en tarjetas simples
                     col1, col2, col3, col4 = st.columns(4)
                     
                     with col1:
-                        st.metric("📋 Pallets en Vista", f"{pallets_vista:,}", 
-                                 help=f"Registros únicos (producto + pallet)")
+                        st.metric(
+                            "💰 Impacto Económico", 
+                            f"${costo_filtrado:,.0f}",
+                            help=f"Costo total del inventario negativo al {fecha_max_filtrada.strftime('%d/%m/%Y')}"
+                        )
                     
                     with col2:
-                        st.metric("🔢 Productos Únicos", f"{productos_vista:,}",
-                                 help="Códigos de producto diferentes")
+                        st.metric(
+                            "📦 Unidades Negativas", 
+                            f"{total_stock_ultimo:,.0f}",
+                            help=f"Total de unidades en negativo al {fecha_max_filtrada.strftime('%d/%m/%Y')}"
+                        )
                     
                     with col3:
-                        if fecha_cols_hist:
-                            valores_negativos = historico_pivot[fecha_cols_hist].select_dtypes(include=[np.number])
-                            valores_negativos = valores_negativos[valores_negativos < 0]
-                            promedio_neg_hist = abs(valores_negativos.mean().mean())
-                            promedio_display_hist = f"{promedio_neg_hist:.1f}" if pd.notna(promedio_neg_hist) else "N/A"
-                            st.metric("📊 Promedio por Registro", promedio_display_hist,
-                                     help="Promedio de unidades negativas por registro")
+                        st.metric(
+                            "🏢 Almacenes", 
+                            f"{almacenes_vista}",
+                            help=f"Almacenes incluidos en la vista actual ({zonas_vista} zonas)"
+                        )
                     
                     with col4:
+                        st.metric(
+                            "🔢 Productos", 
+                            f"{productos_vista:,}",
+                            help="Productos únicos con stock negativo"
+                        )
+                    
+                    # Métricas secundarias
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("📋 Registros (Pallets)", f"{pallets_vista:,}", 
+                                 help="Registros únicos en la tabla (producto + pallet)")
+                    
+                    with col2:
                         costo_promedio_producto = costo_filtrado / productos_vista if productos_vista > 0 else 0
-                        st.metric("💵 Costo Prom/Producto", f"${costo_promedio_producto:,.0f}",
-                                 help="Costo promedio por producto único")
+                        st.metric("💵 Costo Promedio", f"${costo_promedio_producto:,.0f}",
+                                 help="Costo promedio por producto")
+                    
+                    with col3:
+                        if fecha_cols_hist and total_stock_ultimo > 0:
+                            promedio_unidades = total_stock_ultimo / productos_vista if productos_vista > 0 else 0
+                            st.metric("📊 Unid. Prom/Producto", f"{promedio_unidades:.1f}",
+                                     help="Promedio de unidades negativas por producto")
+                        else:
+                            st.metric("📊 Unid. Prom/Producto", "N/A")
+                    
+                    with col4:
+                        st.metric("🎯 Zonas Activas", f"{zonas_vista}",
+                                 help="Zonas/Compañías incluidas en la vista")
                     
                     # VISUALIZACIONES
                     st.markdown("---")
