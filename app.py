@@ -2002,9 +2002,11 @@ def main():
                         with col_btn1:
                             if st.button("✅ Todas", key="btn_todas_zonas", use_container_width=True):
                                 st.session_state['zonas_seleccionadas_temp'] = todas_zonas
+                                st.rerun()
                         with col_btn2:
                             if st.button("❌ Ninguna", key="btn_ninguna_zona", use_container_width=True):
                                 st.session_state['zonas_seleccionadas_temp'] = []
+                                st.rerun()
                         
                         # Multiselect de zonas
                         default_zonas = st.session_state.get('zonas_seleccionadas_temp', todas_zonas)
@@ -2042,9 +2044,11 @@ def main():
                         with col_btn1:
                             if st.button("✅ Todos", key="btn_todos_alm", use_container_width=True, disabled=len(almacenes_disponibles)==0):
                                 st.session_state['almacenes_seleccionados_temp'] = almacenes_disponibles
+                                st.rerun()
                         with col_btn2:
                             if st.button("❌ Ninguno", key="btn_ningun_alm", use_container_width=True, disabled=len(almacenes_disponibles)==0):
                                 st.session_state['almacenes_seleccionados_temp'] = []
+                                st.rerun()
                         
                         # Multiselect de almacenes
                         default_almacenes = st.session_state.get('almacenes_seleccionados_temp', almacenes_disponibles)
@@ -2201,6 +2205,92 @@ def main():
                         (df_filtered["fecha"].dt.date <= fecha_fin_hist)
                     ]
                 
+                # GRÁFICO COMPARATIVO ENTRE ALMACENES SELECCIONADOS
+                if len(df_filtered) > 0:
+                    st.markdown("---")
+                    st.markdown("### 📊 Comparativa entre Almacenes Seleccionados")
+                    
+                    # Calcular datos por almacén (último día)
+                    fecha_max_comp = df_filtered["fecha"].max()
+                    df_comp = df_filtered[df_filtered["fecha"] == fecha_max_comp]
+                    df_comp_neg = df_comp[df_comp["Stock"] < 0]
+                    
+                    if len(df_comp_neg) > 0 and len(almacenes_seleccionados) > 0:
+                        comparativa_alm = df_comp_neg.groupby("InventLocationId").agg({
+                            "Stock": "sum",
+                            "CostStock": "sum",
+                            "ProductId": "nunique"
+                        }).reset_index()
+                        
+                        comparativa_alm["Stock_Abs"] = comparativa_alm["Stock"].abs()
+                        comparativa_alm["CostStock_Abs"] = comparativa_alm["CostStock"].abs()
+                        comparativa_alm = comparativa_alm.sort_values("CostStock_Abs", ascending=False)
+                        
+                        # Layout en 2 columnas
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Gráfico de unidades negativas
+                            fig_unidades_alm = px.bar(
+                                comparativa_alm,
+                                x="InventLocationId",
+                                y="Stock_Abs",
+                                title=f"📦 Unidades Negativas por Almacén - {fecha_max_comp.strftime('%d/%m/%Y')}",
+                                labels={"Stock_Abs": "Unidades Negativas", "InventLocationId": "Almacén"},
+                                color="Stock_Abs",
+                                color_continuous_scale="Reds",
+                                text="Stock_Abs"
+                            )
+                            fig_unidades_alm.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
+                            fig_unidades_alm.update_layout(
+                                height=400,
+                                showlegend=False,
+                                xaxis_tickangle=-45
+                            )
+                            st.plotly_chart(fig_unidades_alm, use_container_width=True)
+                        
+                        with col2:
+                            # Gráfico de costos
+                            fig_costos_alm = px.bar(
+                                comparativa_alm,
+                                x="InventLocationId",
+                                y="CostStock_Abs",
+                                title=f"💰 Impacto Económico por Almacén - {fecha_max_comp.strftime('%d/%m/%Y')}",
+                                labels={"CostStock_Abs": "Costo ($)", "InventLocationId": "Almacén"},
+                                color="CostStock_Abs",
+                                color_continuous_scale="Oranges",
+                                text="CostStock_Abs"
+                            )
+                            fig_costos_alm.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
+                            fig_costos_alm.update_layout(
+                                height=400,
+                                showlegend=False,
+                                xaxis_tickangle=-45
+                            )
+                            st.plotly_chart(fig_costos_alm, use_container_width=True)
+                        
+                        # Tabla resumen comparativa
+                        st.markdown("#### 📋 Tabla Comparativa Detallada")
+                        comparativa_display = comparativa_alm.rename(columns={
+                            "InventLocationId": "Almacén",
+                            "Stock_Abs": "Unidades Negativas",
+                            "CostStock_Abs": "Costo Total ($)",
+                            "ProductId": "Productos Únicos"
+                        })
+                        comparativa_display["Unidades Negativas"] = comparativa_display["Unidades Negativas"].apply(lambda x: f"{x:,.0f}")
+                        comparativa_display["Costo Total ($)"] = comparativa_display["Costo Total ($)"].apply(lambda x: f"${x:,.0f}")
+                        
+                        st.dataframe(
+                            comparativa_display[["Almacén", "Unidades Negativas", "Costo Total ($)", "Productos Únicos"]],
+                            use_container_width=True,
+                            height=250,
+                            hide_index=True
+                        )
+                    else:
+                        st.info("ℹ️ Selecciona almacenes para ver la comparativa")
+                    
+                    st.markdown("---")
+                
                 # CREAR TABLA PIVOTE (incluir CompanyId)
                 if len(df_filtered) > 0:
                     # IMPORTANTE: Rellenar LabelId vacíos ANTES del pivot para no perder registros
@@ -2240,20 +2330,142 @@ def main():
                     if max_rows_display != "Todas":
                         historico_pivot = historico_pivot.head(max_rows_display)
                     
+                    # TABLA PRINCIPAL - COMPORTAMIENTO DIARIO CON MEJORAS SIGNIFICATIVAS
+                    st.markdown("### 📅 Tabla de Comportamiento Diario (Producto + Pallet)")
+                    
+                    # FILTROS DINÁMICOS PARA LA TABLA
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        resaltar_criticos = st.checkbox(
+                            "🔴 Resaltar críticos (> -100 unid)",
+                            value=True,
+                            key="resaltar_criticos",
+                            help="Resalta filas donde el último día tiene más de -100 unidades"
+                        )
+                    
+                    with col2:
+                        ordenar_tabla = st.selectbox(
+                            "📊 Ordenar por:",
+                            ["Más Negativo (Último Día)", "Código (A-Z)", "Nombre (A-Z)", "Almacén"],
+                            key="ordenar_tabla_hist"
+                        )
+                    
+                    with col3:
+                        mostrar_totales = st.checkbox(
+                            "➕ Mostrar columna de totales",
+                            value=False,
+                            key="mostrar_totales_hist"
+                        )
+                    
+                    with col4:
+                        color_celdas_none = st.color_picker(
+                            "🎨 Color celdas vacías:",
+                            value="#f0f0f0",
+                            key="color_none_hist"
+                        )
+                    
+                    # Aplicar ordenamiento
+                    if fecha_cols_hist:
+                        ultima_col = max(fecha_cols_hist)
+                        
+                        if ordenar_tabla == "Más Negativo (Último Día)":
+                            historico_pivot = historico_pivot.sort_values(
+                                by=ultima_col,
+                                ascending=True,
+                                na_position='last'
+                            )
+                        elif ordenar_tabla == "Código (A-Z)":
+                            historico_pivot = historico_pivot.sort_values("Codigo")
+                        elif ordenar_tabla == "Nombre (A-Z)":
+                            historico_pivot = historico_pivot.sort_values("Nombre")
+                        elif ordenar_tabla == "Almacén":
+                            historico_pivot = historico_pivot.sort_values("Almacen")
+                        
+                        # Agregar columna de total si se solicita
+                        if mostrar_totales:
+                            historico_pivot["Total_Historico"] = historico_pivot[fecha_cols_hist].sum(axis=1, skipna=True)
+                        
+                        # Identificar filas críticas
+                        if resaltar_criticos:
+                            historico_pivot["_Es_Critico"] = historico_pivot[ultima_col].apply(
+                                lambda x: "🔴 CRÍTICO" if pd.notna(x) and x < -100 else ""
+                            )
+                    
+                    # Información de registros
                     info_msg = f"📋 **Mostrando {len(historico_pivot):,} de {total_rows:,} registros únicos** (producto + pallet)"
                     if registros_sin_pallet > 0:
                         info_msg += f" | ⚠️ {registros_sin_pallet:,} productos sin ID de pallet"
+                    if resaltar_criticos:
+                        num_criticos = len(historico_pivot[historico_pivot.get("_Es_Critico", "") == "🔴 CRÍTICO"])
+                        if num_criticos > 0:
+                            info_msg += f" | 🔴 {num_criticos:,} registros críticos"
                     st.info(info_msg)
                     
-                    # TABLA SIN ESTILOS PESADOS (optimizada para grandes volúmenes)
-                    # Usar dataframe nativo con column_config para formato
+                    # PREPARAR CONFIGURACIÓN DE COLUMNAS CON COLORES
+                    column_config = {}
+                    
+                    # Configurar columnas de fechas con formato condicional
+                    for fecha_col in fecha_cols_hist:
+                        fecha_str = fecha_col.strftime('%Y-%m-%d')
+                        column_config[fecha_col] = st.column_config.NumberColumn(
+                            fecha_str,
+                            help=f"Stock al {fecha_str}",
+                            format="%d"
+                        )
+                    
+                    # Configuración para columna de críticos
+                    if resaltar_criticos and "_Es_Critico" in historico_pivot.columns:
+                        column_config["_Es_Critico"] = st.column_config.TextColumn(
+                            "⚠️ Nivel",
+                            help="Indica si el registro es crítico (< -100 unidades en último día)"
+                        )
+                    
+                    # Reordenar columnas para poner crítico al principio si existe
+                    if resaltar_criticos and "_Es_Critico" in historico_pivot.columns:
+                        cols_order = ["_Es_Critico"] + [c for c in historico_pivot.columns if c != "_Es_Critico"]
+                        historico_pivot = historico_pivot[cols_order]
+                    
+                    # MOSTRAR TABLA CON COLORES
+                    st.markdown(f"""
+                    <style>
+                    /* Estilo para celdas None/vacías */
+                    .stDataFrame td:empty {{
+                        background-color: {color_celdas_none} !important;
+                    }}
+                    /* Resaltar celdas con valores negativos muy altos */
+                    .stDataFrame td[data-value*="-"] {{
+                        font-weight: bold;
+                    }}
+                    </style>
+                    """, unsafe_allow_html=True)
+                    
                     st.dataframe(
                         historico_pivot,
+                        column_config=column_config,
                         width='stretch',
                         height=500,
                         use_container_width=True,
                         hide_index=True
                     )
+                    
+                    # Leyenda explicativa
+                    with st.expander("ℹ️ Guía de Lectura de la Tabla"):
+                        st.markdown(f"""
+                        **📊 Cómo interpretar la tabla:**
+                        
+                        - **Celdas vacías:** Aparecen con color <span style="background-color: {color_celdas_none}; padding: 2px 8px; border-radius: 3px;">gris claro</span> para distinguirlas fácilmente
+                        - **Valores negativos:** Representan stock negativo en esa fecha
+                        - **🔴 CRÍTICO:** Productos con más de -100 unidades en el último día (requieren atención urgente)
+                        - **Producto + Pallet:** Cada fila es única por la combinación de producto y su ID de pallet
+                        - **Ordenamiento:** Usa el filtro "Ordenar por" para enfocarte en lo más grave
+                        
+                        **💡 Tips de análisis:**
+                        - Ordena por "Más Negativo" para ver primero los casos más graves
+                        - Activa "Resaltar críticos" para identificar rápidamente lo prioritario
+                        - Usa la búsqueda de código para seguimiento específico
+                        - La columna "Total Histórico" muestra la suma acumulada (opcional)
+                        """, unsafe_allow_html=True)
                     
                     # PANEL DE CONTROL - VISTA FILTRADA
                     st.markdown("---")
