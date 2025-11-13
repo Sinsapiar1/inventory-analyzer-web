@@ -11,6 +11,9 @@ from datetime import datetime, timedelta
 import warnings
 from pathlib import Path
 import zipfile
+import sqlite3
+import requests
+import tempfile
 
 warnings.filterwarnings("ignore")
 
@@ -929,6 +932,70 @@ def export_preprocessed_report(df_procesado, stats, fecha_suffix=None):
     except Exception as e:
         return None, None, False, str(e)
 
+# ========== NUEVAS FUNCIONES PARA HISTÓRICO DB ==========
+
+@st.cache_data(ttl=3600)  # Cache por 1 hora
+def download_and_connect_db():
+    """
+    Descarga DB desde GitHub y retorna path del archivo temporal
+    
+    Returns:
+        tuple: (db_path, success, error_message)
+    """
+    url = "https://raw.githubusercontent.com/Sinsapiar1/alsina-negativos-db/main/negativos_inventario.db"
+    
+    try:
+        # Descargar archivo
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        
+        # Guardar en archivo temporal
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+        temp_file.write(response.content)
+        temp_file.close()
+        
+        # Verificar que se puede conectar
+        conn = sqlite3.connect(temp_file.name)
+        conn.close()
+        
+        return temp_file.name, True, None
+        
+    except requests.RequestException as e:
+        return None, False, f"Error de red: {str(e)}"
+    except sqlite3.Error as e:
+        return None, False, f"Error de base de datos: {str(e)}"
+    except Exception as e:
+        return None, False, f"Error inesperado: {str(e)}"
+
+@st.cache_data(ttl=3600)
+def load_historico_data(db_path):
+    """
+    Carga datos desde la base de datos SQLite y retorna DataFrame
+    
+    Args:
+        db_path: Path del archivo de base de datos
+        
+    Returns:
+        tuple: (df_historico, success, error_message)
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        query = "SELECT * FROM inventario ORDER BY fecha DESC"
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        
+        # Convertir fecha a datetime
+        df['fecha'] = pd.to_datetime(df['fecha'])
+        
+        # Convertir tipos de datos
+        df['Stock'] = pd.to_numeric(df['Stock'], errors='coerce').fillna(0)
+        df['CostStock'] = pd.to_numeric(df['CostStock'], errors='coerce').fillna(0)
+        
+        return df, True, None
+        
+    except Exception as e:
+        return None, False, f"Error al cargar datos: {str(e)}"
+
 # INTERFAZ PRINCIPAL
 def main():
     # Header
@@ -1277,7 +1344,7 @@ def main():
                 st.plotly_chart(fig4, use_container_width=True)
             
             # Tablas de datos
-            tab1, tab2, tab3, tab4 = st.tabs(["📊 Análisis Principal", "🔄 Reincidencias", "📈 Súper Análisis", "📋 Datos Crudos"])
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Análisis Principal", "🔄 Reincidencias", "📈 Súper Análisis", "📋 Datos Crudos", "🗄️ Histórico DB"])
             
             with tab1:
                 st.subheader("Problemas por Severidad")
@@ -1627,6 +1694,423 @@ def main():
             with tab4:
                 st.subheader("Datos Crudos Procesados")
                 st.dataframe(df_total, width='stretch', height=400)
+            
+            with tab5:
+                st.subheader("🗄️ Análisis Histórico desde Base de Datos")
+                
+                # Descargar y conectar DB
+                with st.spinner("Descargando base de datos desde GitHub..."):
+                    db_path, success, error = download_and_connect_db()
+                
+                if not success:
+                    st.error(f"❌ Error conectando a la base de datos: {error}")
+                    st.info("""
+                    **Posibles causas:**
+                    - El repositorio no está accesible
+                    - El archivo de base de datos no existe
+                    - Problemas de conexión a internet
+                    
+                    **URL del repositorio:**
+                    https://github.com/Sinsapiar1/alsina-negativos-db
+                    """)
+                else:
+                    # Cargar datos
+                    with st.spinner("Cargando datos históricos..."):
+                        df_historico, load_success, load_error = load_historico_data(db_path)
+                    
+                    if not load_success:
+                        st.error(f"❌ Error al cargar datos: {load_error}")
+                    else:
+                        st.success(f"✅ Base de datos cargada exitosamente: {len(df_historico):,} registros")
+                        
+                        # MÉTRICAS PRINCIPALES DE COSTOS (arriba de filtros)
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            total_registros = len(df_historico)
+                            st.metric("Total Registros", f"{total_registros:,}")
+                        
+                        with col2:
+                            fechas_unicas = df_historico["fecha"].nunique()
+                            fecha_min = df_historico["fecha"].min().strftime("%Y-%m-%d")
+                            fecha_max = df_historico["fecha"].max().strftime("%Y-%m-%d")
+                            st.metric("Días con Datos", fechas_unicas, help=f"Desde {fecha_min} hasta {fecha_max}")
+                        
+                        with col3:
+                            costo_total_negativo = df_historico[df_historico["Stock"] < 0]["CostStock"].sum()
+                            st.metric("Costo Total Negativo", f"${costo_total_negativo:,.0f}", delta=f"{costo_total_negativo:,.0f}", delta_color="inverse")
+                        
+                        with col4:
+                            productos_unicos = df_historico["ProductId"].nunique()
+                            st.metric("Productos Únicos", f"{productos_unicos:,}")
+                        
+                        st.markdown("---")
+                        
+                        # CONTROLES AVANZADOS (idénticos al Súper Análisis)
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            buscar_codigo_hist = st.text_input("🔍 Buscar código:", key="buscar_codigo_hist")
+                        
+                        with col2:
+                            solo_activos_hist = st.checkbox("Solo artículos activos (última fecha)", key="solo_activos_hist")
+                        
+                        with col3:
+                            almacen_hist = st.selectbox("Filtrar por almacén:", 
+                                ["Todos"] + sorted(df_historico["InventLocationId"].unique().tolist()),
+                                key="almacen_hist")
+                        
+                        with col4:
+                            mostrar_vacios_hist = st.checkbox("Mostrar celdas vacías como 0", key="mostrar_vacios_hist")
+                        
+                        # FILTROS ADICIONALES en expandible
+                        with st.expander("🔧 Filtros Avanzados"):
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                codigos_excluir_hist = st.text_area(
+                                    "Códigos a EXCLUIR (separados por comas):",
+                                    key="codigos_excluir_hist",
+                                    height=60
+                                )
+                            
+                            with col2:
+                                codigos_incluir_hist = st.text_area(
+                                    "Solo INCLUIR códigos (separados por comas):",
+                                    key="codigos_incluir_hist",
+                                    height=60
+                                )
+                            
+                            with col3:
+                                solo_negativos_hist = st.checkbox(
+                                    "Solo mostrar stock negativo",
+                                    value=True,
+                                    key="solo_negativos_hist",
+                                    help="Filtrar solo registros con Stock < 0"
+                                )
+                            
+                            # Filtro por rango de fechas
+                            fechas_disponibles = sorted(df_historico["fecha"].unique())
+                            if len(fechas_disponibles) > 0:
+                                col_f1, col_f2 = st.columns(2)
+                                with col_f1:
+                                    fecha_inicio_hist = st.date_input(
+                                        "Desde fecha:",
+                                        value=fechas_disponibles[0],
+                                        min_value=fechas_disponibles[0],
+                                        max_value=fechas_disponibles[-1],
+                                        key="fecha_inicio_hist"
+                                    )
+                                with col_f2:
+                                    fecha_fin_hist = st.date_input(
+                                        "Hasta fecha:",
+                                        value=fechas_disponibles[-1],
+                                        min_value=fechas_disponibles[0],
+                                        max_value=fechas_disponibles[-1],
+                                        key="fecha_fin_hist"
+                                    )
+                        
+                        # APLICAR FILTROS
+                        df_filtered = df_historico.copy()
+                        
+                        # Filtro por stock negativo
+                        if solo_negativos_hist:
+                            df_filtered = df_filtered[df_filtered["Stock"] < 0]
+                        
+                        # Filtro por búsqueda de código
+                        if buscar_codigo_hist:
+                            mask = df_filtered["ProductId"].astype(str).str.contains(buscar_codigo_hist, case=False, na=False)
+                            df_filtered = df_filtered[mask]
+                        
+                        # Filtro por almacén
+                        if almacen_hist != "Todos":
+                            df_filtered = df_filtered[df_filtered["InventLocationId"] == almacen_hist]
+                        
+                        # Filtro códigos a excluir
+                        if codigos_excluir_hist.strip():
+                            codigos_excl = [c.strip() for c in codigos_excluir_hist.split(",") if c.strip()]
+                            df_filtered = df_filtered[~df_filtered["ProductId"].astype(str).isin(codigos_excl)]
+                        
+                        # Filtro solo incluir códigos
+                        if codigos_incluir_hist.strip():
+                            codigos_incl = [c.strip() for c in codigos_incluir_hist.split(",") if c.strip()]
+                            df_filtered = df_filtered[df_filtered["ProductId"].astype(str).isin(codigos_incl)]
+                        
+                        # Filtro por rango de fechas
+                        if 'fecha_inicio_hist' in locals() and 'fecha_fin_hist' in locals():
+                            df_filtered = df_filtered[
+                                (df_filtered["fecha"].dt.date >= fecha_inicio_hist) &
+                                (df_filtered["fecha"].dt.date <= fecha_fin_hist)
+                            ]
+                        
+                        # CREAR TABLA PIVOTE (igual que Súper Análisis)
+                        if len(df_filtered) > 0:
+                            # Crear ID único para pivot
+                            df_filtered["ID_Unico"] = (df_filtered["ProductId"].astype(str) + "_" + 
+                                                      df_filtered["LabelId"].astype(str))
+                            
+                            # Pivot table
+                            historico_pivot = df_filtered.pivot_table(
+                                index=["ProductId", "ProductName_es", "LabelId", "InventLocationId"],
+                                columns="fecha",
+                                values="Stock",
+                                aggfunc="first"
+                            ).reset_index()
+                            
+                            # Renombrar columnas base
+                            historico_pivot = historico_pivot.rename(columns={
+                                "ProductId": "Codigo",
+                                "ProductName_es": "Nombre",
+                                "LabelId": "ID_Pallet",
+                                "InventLocationId": "Almacen"
+                            })
+                            
+                            # Ordenar columnas por fecha
+                            fecha_cols_hist = sorted([c for c in historico_pivot.columns if isinstance(c, pd.Timestamp)])
+                            otras_hist = [c for c in historico_pivot.columns if not isinstance(c, pd.Timestamp)]
+                            historico_pivot = historico_pivot[otras_hist + fecha_cols_hist]
+                            
+                            # Filtro solo activos (tienen valor en última fecha)
+                            if solo_activos_hist and fecha_cols_hist:
+                                ultima_fecha_hist = max(fecha_cols_hist)
+                                historico_pivot = historico_pivot[historico_pivot[ultima_fecha_hist].notna() & (historico_pivot[ultima_fecha_hist] != 0)]
+                            
+                            # Mostrar información de filtrado
+                            st.info(f"📋 **Mostrando {len(historico_pivot)} registros únicos** (producto + pallet) con los filtros aplicados")
+                            
+                            # Procesar datos para visualización
+                            if mostrar_vacios_hist:
+                                historico_display = historico_pivot.fillna(0)
+                            else:
+                                historico_display = historico_pivot.fillna("")
+                            
+                            # Función para colorear celdas (igual que Súper Análisis)
+                            def colorear_historico(val):
+                                if pd.isna(val) or val == "" or val == 0:
+                                    return ""
+                                elif isinstance(val, (int, float)) and val < 0:
+                                    # Gradiente de rojo según magnitud
+                                    intensity = min(abs(val) / 100, 1.0)
+                                    alpha = 0.3 + (intensity * 0.5)
+                                    return f"background-color: rgba(255, 68, 68, {alpha}); color: white; font-weight: bold;"
+                                return ""
+                            
+                            # Aplicar estilo y mostrar tabla
+                            styled_historico = historico_display.style.applymap(colorear_historico)
+                            st.dataframe(styled_historico, width='stretch', height=500)
+                            
+                            # ESTADÍSTICAS RÁPIDAS
+                            st.markdown("---")
+                            st.markdown("#### 📊 Estadísticas de la Vista Actual")
+                            
+                            col1, col2, col3, col4 = st.columns(4)
+                            
+                            with col1:
+                                if fecha_cols_hist:
+                                    total_neg_hist = historico_display[fecha_cols_hist].select_dtypes(include=[np.number]).sum().sum()
+                                    st.metric("Total Negativo", f"{total_neg_hist:,.0f}", help="Suma total de valores negativos visibles")
+                            
+                            with col2:
+                                pallets_vista = len(historico_pivot)
+                                st.metric("Pallets en Vista", pallets_vista, help="Número de pallets mostrados con los filtros aplicados")
+                            
+                            with col3:
+                                if fecha_cols_hist:
+                                    promedio_neg_hist = historico_display[fecha_cols_hist].select_dtypes(include=[np.number]).mean().mean()
+                                    promedio_display_hist = f"{promedio_neg_hist:.1f}" if pd.notna(promedio_neg_hist) else "N/A"
+                                    st.metric("Promedio por Celda", promedio_display_hist, help="Promedio de valores en las celdas visibles")
+                            
+                            with col4:
+                                # Costo total de los filtrados
+                                costo_filtrado = df_filtered[df_filtered["Stock"] < 0]["CostStock"].sum()
+                                st.metric("Costo Filtrado", f"${costo_filtrado:,.0f}", help="Costo total de registros negativos filtrados")
+                            
+                            # GRÁFICOS DINÁMICOS (idénticos al Súper Análisis)
+                            st.markdown("---")
+                            st.markdown("### 📈 Análisis Visual de Datos Filtrados")
+                            st.markdown("Visualizaciones interactivas basadas en los datos filtrados mostrados arriba")
+                            
+                            if fecha_cols_hist and len(historico_pivot) > 0:
+                                
+                                # Gráfico 1: Evolución Total
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    evolution_data_hist = []
+                                    for fecha in sorted(fecha_cols_hist):
+                                        columna = pd.to_numeric(historico_display[fecha], errors='coerce')
+                                        total = columna.sum(skipna=True)
+                                        if pd.notna(total) and total != 0:
+                                            evolution_data_hist.append({"Fecha": fecha, "Total": abs(total)})
+                                    
+                                    if evolution_data_hist:
+                                        evo_df_hist = pd.DataFrame(evolution_data_hist)
+                                        fig_evo_hist = px.line(
+                                            evo_df_hist,
+                                            x="Fecha",
+                                            y="Total",
+                                            title="Evolución Total (Histórico DB)",
+                                            markers=True
+                                        )
+                                        fig_evo_hist.update_traces(line_color="#ff4444", line_width=3)
+                                        fig_evo_hist.update_layout(height=350)
+                                        st.plotly_chart(fig_evo_hist, use_container_width=True)
+                                
+                                with col2:
+                                    # Gráfico 2: Distribución por almacén
+                                    almacen_data_hist = {}
+                                    for almacen in historico_pivot["Almacen"].unique():
+                                        if pd.notna(almacen):
+                                            subset = historico_display[historico_display["Almacen"] == almacen]
+                                            total = 0
+                                            for fecha in fecha_cols_hist:
+                                                columna_numerica = pd.to_numeric(subset[fecha], errors='coerce')
+                                                total += columna_numerica.sum(skipna=True)
+                                            
+                                            if total != 0:
+                                                almacen_data_hist[almacen] = abs(total)
+                                    
+                                    if almacen_data_hist:
+                                        fig_almacen_hist = px.pie(
+                                            values=list(almacen_data_hist.values()),
+                                            names=list(almacen_data_hist.keys()),
+                                            title="Distribución por Almacén (Histórico)"
+                                        )
+                                        fig_almacen_hist.update_layout(height=350)
+                                        st.plotly_chart(fig_almacen_hist, use_container_width=True)
+                                
+                                # Gráfico 3: MAPA DE CALOR
+                                if len(fecha_cols_hist) > 1:
+                                    st.subheader("🔥 Mapa de Calor - Evolución por Pallet")
+                                    
+                                    col1, col2 = st.columns([3, 1])
+                                    with col1:
+                                        st.write("Controla cuántos pallets mostrar en el mapa de calor:")
+                                    with col2:
+                                        opciones_heat_hist = [10, 20, 30, 50, 100]
+                                        if len(historico_pivot) not in opciones_heat_hist:
+                                            opciones_heat_hist.append(len(historico_pivot))
+                                        opciones_heat_hist = sorted([x for x in opciones_heat_hist if x <= len(historico_pivot)])
+                                        
+                                        max_rows_heat_hist = st.selectbox(
+                                            "Pallets:",
+                                            options=opciones_heat_hist,
+                                            index=min(2, len(opciones_heat_hist) - 1),
+                                            key="max_rows_heatmap_hist"
+                                        )
+                                    
+                                    # Preparar datos para heatmap
+                                    historico_pivot_copy = historico_pivot.copy()
+                                    historico_pivot_copy['Codigo_Pallet'] = (historico_pivot_copy['Codigo'].astype(str) + 
+                                                                             '_' + historico_pivot_copy['ID_Pallet'].astype(str))
+                                    
+                                    historico_heat = historico_pivot_copy.head(max_rows_heat_hist)
+                                    heatmap_data_hist = historico_heat.set_index('Codigo_Pallet')[fecha_cols_hist].copy()
+                                    
+                                    # Convertir a numérico
+                                    for col in heatmap_data_hist.columns:
+                                        heatmap_data_hist[col] = pd.to_numeric(heatmap_data_hist[col], errors='coerce')
+                                    
+                                    heatmap_data_hist = heatmap_data_hist.dropna(how='all').fillna(0)
+                                    
+                                    if not heatmap_data_hist.empty:
+                                        height_map_hist = max(500, len(heatmap_data_hist) * 25)
+                                        
+                                        fig_heat_hist = px.imshow(
+                                            heatmap_data_hist.values,
+                                            labels=dict(x="Fecha", y="Código_Pallet", color="Stock"),
+                                            x=[d.strftime("%m/%d") for d in sorted(fecha_cols_hist)],
+                                            y=heatmap_data_hist.index,
+                                            title=f"Mapa de Calor - {len(heatmap_data_hist)} Pallets (Histórico DB)",
+                                            color_continuous_scale="RdBu_r",
+                                            aspect="auto"
+                                        )
+                                        fig_heat_hist.update_layout(height=height_map_hist)
+                                        st.plotly_chart(fig_heat_hist, use_container_width=True)
+                                        
+                                        st.info(f"Mostrando {len(heatmap_data_hist)} de {len(historico_pivot)} pallets filtrados")
+                                
+                                # Gráfico 4: EVOLUCIÓN INDIVIDUAL
+                                if len(historico_pivot) >= 1:
+                                    st.subheader("📈 Evolución Individual por Pallet")
+                                    
+                                    col1, col2 = st.columns([3, 1])
+                                    with col1:
+                                        st.write("Líneas de evolución individual (comportamiento día a día):")
+                                    with col2:
+                                        max_lines_hist = st.selectbox(
+                                            "Líneas:",
+                                            options=list(range(1, min(16, len(historico_pivot) + 1))),
+                                            index=min(4, len(historico_pivot) - 1),
+                                            key="max_lines_evolution_hist"
+                                        )
+                                    
+                                    pallets_to_show_hist = historico_pivot.head(max_lines_hist)
+                                    
+                                    fig_lines_hist = go.Figure()
+                                    colors = px.colors.qualitative.Set1[:max_lines_hist]
+                                    
+                                    for idx, (_, row) in enumerate(pallets_to_show_hist.iterrows()):
+                                        codigo_pallet = str(row["Codigo"]) + "_" + str(row["ID_Pallet"])
+                                        
+                                        valores = []
+                                        fechas_validas = []
+                                        
+                                        for fecha in sorted(fecha_cols_hist):
+                                            valor = row[fecha]
+                                            try:
+                                                valor_num = pd.to_numeric(valor, errors='coerce')
+                                                if pd.notna(valor_num) and valor_num != 0:
+                                                    valores.append(valor_num)
+                                                    fechas_validas.append(fecha)
+                                            except:
+                                                continue
+                                        
+                                        if valores and fechas_validas:
+                                            fig_lines_hist.add_trace(go.Scatter(
+                                                x=fechas_validas,
+                                                y=valores,
+                                                mode='lines+markers',
+                                                name=codigo_pallet,
+                                                line=dict(width=3, color=colors[idx % len(colors)]),
+                                                marker=dict(size=6),
+                                                hovertemplate="<b>%{fullData.name}</b><br>" +
+                                                            "Fecha: %{x}<br>" +
+                                                            "Stock: %{y}<br>" +
+                                                            "<extra></extra>"
+                                            ))
+                                    
+                                    fig_lines_hist.update_layout(
+                                        title=f"Comportamiento Diario Individual - {max_lines_hist} Pallets (Histórico DB)",
+                                        xaxis_title="Fecha",
+                                        yaxis_title="Stock Negativo",
+                                        height=450,
+                                        hovermode='x unified',
+                                        legend=dict(
+                                            yanchor="top",
+                                            y=0.99,
+                                            xanchor="left",
+                                            x=1.01
+                                        )
+                                    )
+                                    
+                                    st.plotly_chart(fig_lines_hist, use_container_width=True)
+                                    
+                                    st.info(f"Cada línea representa la evolución diaria de un pallet específico. " +
+                                           f"Mostrando {max_lines_hist} de {len(historico_pivot)} pallets filtrados.")
+                            
+                            # Botón de descarga
+                            st.markdown("---")
+                            csv_historico = historico_display.to_csv(index=False)
+                            st.download_button(
+                                label="📥 Descargar Histórico DB Filtrado (CSV)",
+                                data=csv_historico,
+                                file_name=f"Historico_DB_Filtrado_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                                mime="text/csv",
+                                help="Descarga los datos históricos filtrados en formato CSV"
+                            )
+                        else:
+                            st.warning("⚠️ No hay datos que coincidan con los filtros aplicados.")
             
             # Descarga de reporte
             st.subheader("💾 Descargar Reporte")
