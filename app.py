@@ -1861,42 +1861,14 @@ def main():
                 ultima_fecha = df_historico["fecha"].max()
                 df_ultimo_dia = df_historico[df_historico["fecha"] == ultima_fecha]
                 
-                # DEBUG: Verificar unidades del 61D
-                with st.expander("🔍 Debug: Verificar Unidades 61D", expanded=True):
-                    st.write("### Análisis de Stock Negativo - Almacén 61D")
-                    
-                    # Del df_historico original (último día)
-                    df_612d_ultimo = df_ultimo_dia[df_ultimo_dia["InventLocationId"] == "61D"]
-                    df_612d_negativos = df_612d_ultimo[df_612d_ultimo["Stock"] < 0]
-                    
-                    total_stock_original = abs(df_612d_negativos["Stock"].sum())
-                    registros_originales = len(df_612d_negativos)
-                    
-                    st.write(f"**1. Del DataFrame Original (df_historico, último día):**")
-                    st.write(f"   - Total Stock Negativo: **{total_stock_original:,.0f}** unidades")
-                    st.write(f"   - Registros: {registros_originales}")
-                    
-                    # Verificar productos sin LabelId
-                    sin_label = df_612d_negativos[df_612d_negativos["LabelId"].isna() | (df_612d_negativos["LabelId"] == "")]
-                    st.write(f"   - Registros SIN LabelId: **{len(sin_label)}**")
-                    if len(sin_label) > 0:
-                        stock_sin_label = abs(sin_label["Stock"].sum())
-                        st.write(f"   - Stock de productos SIN LabelId: **{stock_sin_label:,.0f}** unidades")
-                        st.write(f"   - % del total: **{(stock_sin_label/total_stock_original*100):.1f}%**")
-                        st.dataframe(sin_label[["ProductId", "ProductName_es", "LabelId", "Stock"]], use_container_width=True, height=200)
-                    
-                    # Verificar duplicados
-                    st.write(f"\n**2. Verificación de Duplicados:**")
-                    duplicados = df_612d_negativos.groupby(["ProductId", "LabelId"]).size()
-                    duplicados = duplicados[duplicados > 1]
-                    if len(duplicados) > 0:
-                        st.warning(f"⚠️ Hay {len(duplicados)} combinaciones Producto-Pallet duplicadas!")
-                        st.dataframe(duplicados, use_container_width=True)
-                    else:
-                        st.success("✅ No hay duplicados de Producto-Pallet")
-                
-                # MÉTRICAS PRINCIPALES DE COSTOS (SOLO ÚLTIMO DÍA)
-                st.info(f"📅 **Mostrando datos del último día disponible:** {ultima_fecha.strftime('%Y-%m-%d')}")
+                # BANNER PROFESIONAL CON FECHA
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                            padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
+                    <h3 style="color: white; margin: 0;">📅 Análisis del Último Día Disponible</h3>
+                    <p style="color: white; margin: 5px 0 0 0; font-size: 18px;">{ultima_fecha.strftime('%d de %B de %Y')}</p>
+                </div>
+                """, unsafe_allow_html=True)
                 
                 col1, col2, col3, col4 = st.columns(4)
                 
@@ -1923,125 +1895,216 @@ def main():
                     st.metric("Productos Únicos", f"{productos_ultimo_dia:,}",
                              help=f"{productos_negativos:,} con stock negativo")
                 
-                # RESUMEN DE COSTOS POR ZONA (SOLO ÚLTIMO DÍA)
+                # RESUMEN DE COSTOS POR ZONA CON VISUALIZACIÓN PROFESIONAL
                 st.markdown("---")
-                st.markdown(f"### 💰 Resumen de Costos por Zona ({ultima_fecha.strftime('%Y-%m-%d')})")
+                st.markdown("### 💰 Panorama de Costos por Zona/Compañía")
                 
-                # CORREGIDO: Solo último día
+                # Calcular datos
                 costos_resumen = df_ultimo_dia[df_ultimo_dia["Stock"] < 0].groupby("CompanyId").agg({
                     "CostStock": "sum",
                     "ProductId": "nunique",
-                    "InventLocationId": "nunique"
-                }).sort_values("CostStock", ascending=True)  # Más negativo primero
+                    "InventLocationId": "nunique",
+                    "Stock": "sum"
+                }).reset_index()
                 
                 costos_resumen["CostStock_Abs"] = costos_resumen["CostStock"].abs()
+                costos_resumen["Stock_Abs"] = costos_resumen["Stock"].abs()
                 costos_resumen = costos_resumen.sort_values("CostStock_Abs", ascending=False)
                 
-                # Mostrar tabla resumen
-                costos_display = costos_resumen[["CostStock_Abs", "ProductId", "InventLocationId"]].copy()
-                costos_display.columns = ["Costo Total ($)", "Productos", "Almacenes"]
-                costos_display["Costo Total ($)"] = costos_display["Costo Total ($)"].apply(lambda x: f"${x:,.0f}")
+                # Visualización combinada
+                col1, col2 = st.columns([2, 1])
                 
-                st.dataframe(costos_display, use_container_width=True, height=200)
-                st.caption("💡 Los costos mostrados corresponden únicamente al último día disponible")
+                with col1:
+                    # Gráfico de barras con costo
+                    fig_costos_zona_main = px.bar(
+                        costos_resumen.head(10),
+                        x="CostStock_Abs",
+                        y="CompanyId",
+                        orientation='h',
+                        title="Top 10 Zonas por Impacto Económico",
+                        labels={"CostStock_Abs": "Costo del Inventario Negativo ($)", "CompanyId": "Zona"},
+                        color="CostStock_Abs",
+                        color_continuous_scale=["#90EE90", "#FFD700", "#FF6347"],
+                        text="CostStock_Abs"
+                    )
+                    fig_costos_zona_main.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
+                    fig_costos_zona_main.update_layout(height=400, showlegend=False)
+                    st.plotly_chart(fig_costos_zona_main, use_container_width=True)
+                
+                with col2:
+                    # Tabla resumen compacta con métricas clave
+                    st.markdown("#### 📊 Métricas por Zona")
+                    for idx, row in costos_resumen.head(5).iterrows():
+                        with st.container():
+                            st.markdown(f"""
+                            <div style="background: #f8f9fa; padding: 10px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid #667eea;">
+                                <strong style="font-size: 16px; color: #667eea;">{row['CompanyId']}</strong><br>
+                                <span style="font-size: 14px;">💰 ${row['CostStock_Abs']:,.0f}</span><br>
+                                <span style="font-size: 12px; color: #666;">📦 {int(row['ProductId'])} productos | 🏢 {int(row['InventLocationId'])} almacenes</span>
+                            </div>
+                            """, unsafe_allow_html=True)
                 
                 st.markdown("---")
                 
-                # CONTROLES AVANZADOS
-                col1, col2, col3, col4, col5 = st.columns(5)
+                # PANEL DE FILTROS PROFESIONAL TIPO POWER BI
+                st.markdown("### 🎯 Panel de Filtros Interactivos")
                 
-                with col1:
-                    buscar_codigo_hist = st.text_input("🔍 Buscar código:", key="buscar_codigo_hist")
-                
-                with col2:
-                    company_hist = st.selectbox("Zona/Compañía:", 
-                        ["Todas"] + sorted(df_historico["CompanyId"].unique().tolist()),
-                        key="company_hist")
-                
-                with col3:
-                    almacen_hist = st.selectbox("Almacén:", 
-                        ["Todos"] + sorted(df_historico["InventLocationId"].unique().tolist()),
-                        key="almacen_hist")
-                
-                with col4:
-                    solo_activos_hist = st.checkbox("Solo activos", value=True, key="solo_activos_hist")
-                
-                with col5:
-                    max_rows_display = st.selectbox("Máx. filas:", 
-                        options=[100, 500, 1000, 5000, "Todas"],
-                        index=1,
-                        key="max_rows_hist",
-                        help="Limitar filas para mejor rendimiento")
-                
-                # FILTROS ADICIONALES
-                with st.expander("🔧 Filtros Avanzados"):
-                    col1, col2, col3 = st.columns(3)
+                # Contenedor con estilo profesional
+                with st.container():
+                    st.markdown("""
+                    <style>
+                    .filter-container {
+                        background: #f8f9fa;
+                        padding: 20px;
+                        border-radius: 10px;
+                        border: 1px solid #e0e0e0;
+                    }
+                    </style>
+                    """, unsafe_allow_html=True)
+                    
+                    # FILA 1: Filtros principales relacionados
+                    col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
                     
                     with col1:
-                        codigos_excluir_hist = st.text_area(
-                            "Códigos a EXCLUIR (separados por comas):",
-                            key="codigos_excluir_hist",
-                            height=60
+                        st.markdown("**🏢 Zonas/Compañías**")
+                        todas_zonas = sorted(df_historico["CompanyId"].unique().tolist())
+                        zonas_seleccionadas = st.multiselect(
+                            "Selecciona una o más zonas:",
+                            options=todas_zonas,
+                            default=todas_zonas,  # Por defecto, todas seleccionadas
+                            key="zonas_multiselect",
+                            help="Filtro relacionado: Los almacenes se ajustarán según las zonas seleccionadas",
+                            label_visibility="collapsed"
                         )
+                        st.caption(f"📊 {len(zonas_seleccionadas)}/{len(todas_zonas)} zonas seleccionadas")
                     
                     with col2:
-                        codigos_incluir_hist = st.text_area(
-                            "Solo INCLUIR códigos (separados por comas):",
-                            key="codigos_incluir_hist",
-                            height=60
+                        st.markdown("**🏭 Almacenes**")
+                        # FILTRO RELACIONADO: Solo mostrar almacenes de las zonas seleccionadas
+                        if zonas_seleccionadas:
+                            almacenes_disponibles = sorted(
+                                df_historico[df_historico["CompanyId"].isin(zonas_seleccionadas)]["InventLocationId"].unique().tolist()
+                            )
+                        else:
+                            almacenes_disponibles = []
+                        
+                        almacenes_seleccionados = st.multiselect(
+                            "Selecciona uno o más almacenes:",
+                            options=almacenes_disponibles,
+                            default=almacenes_disponibles,  # Por defecto, todos
+                            key="almacenes_multiselect",
+                            help="Se muestran solo almacenes de las zonas seleccionadas",
+                            label_visibility="collapsed",
+                            disabled=len(zonas_seleccionadas) == 0
                         )
+                        st.caption(f"🏢 {len(almacenes_seleccionados)}/{len(almacenes_disponibles)} almacenes")
                     
                     with col3:
-                        solo_negativos_hist = st.checkbox(
-                            "Solo mostrar stock negativo",
-                            value=True,
-                            key="solo_negativos_hist",
-                            help="Filtrar solo registros con Stock < 0"
+                        st.markdown("**🔍 Buscar Producto**")
+                        buscar_codigo_hist = st.text_input(
+                            "Código o nombre:",
+                            key="buscar_codigo_hist",
+                            placeholder="Ej: 67312",
+                            label_visibility="collapsed"
                         )
+                        if buscar_codigo_hist:
+                            st.caption(f"🔎 Buscando: '{buscar_codigo_hist}'")
+                        else:
+                            st.caption("📝 Ingresa código para buscar")
                     
-                    # Filtro por rango de fechas
-                    fechas_disponibles = sorted(df_historico["fecha"].unique())
-                    if len(fechas_disponibles) > 0:
-                        col_f1, col_f2 = st.columns(2)
-                        with col_f1:
-                            fecha_inicio_hist = st.date_input(
-                                "Desde fecha:",
-                                value=fechas_disponibles[0],
-                                min_value=fechas_disponibles[0],
-                                max_value=fechas_disponibles[-1],
-                                key="fecha_inicio_hist"
+                    with col4:
+                        st.markdown("**📋 Vista**")
+                        max_rows_display = st.selectbox(
+                            "Máx. filas:",
+                            options=[100, 500, 1000, 5000, "Todas"],
+                            index=1,
+                            key="max_rows_hist",
+                            help="Limitar filas para mejor rendimiento",
+                            label_visibility="collapsed"
+                        )
+                        st.caption("🚀 Rendimiento")
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    # FILA 2: Filtros secundarios (expander)
+                    with st.expander("🔧 Filtros Avanzados", expanded=False):
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            solo_negativos_hist = st.checkbox(
+                                "🔴 Solo Stock Negativo",
+                                value=True,
+                                key="solo_negativos_hist",
+                                help="Filtrar solo registros con Stock < 0"
                             )
-                        with col_f2:
-                            fecha_fin_hist = st.date_input(
-                                "Hasta fecha:",
-                                value=fechas_disponibles[-1],
-                                min_value=fechas_disponibles[0],
-                                max_value=fechas_disponibles[-1],
-                                key="fecha_fin_hist"
+                        
+                        with col2:
+                            codigos_excluir_hist = st.text_area(
+                                "❌ Excluir códigos:",
+                                key="codigos_excluir_hist",
+                                height=60,
+                                placeholder="67312, 87947, ..."
                             )
+                        
+                        with col3:
+                            codigos_incluir_hist = st.text_area(
+                                "✅ Solo incluir códigos:",
+                                key="codigos_incluir_hist",
+                                height=60,
+                                placeholder="67057, 67498, ..."
+                            )
+                        
+                        with col4:
+                            st.markdown("**📅 Rango de Fechas**")
+                            fechas_disponibles = sorted(df_historico["fecha"].unique())
+                            if len(fechas_disponibles) > 0:
+                                fecha_inicio_hist = st.date_input(
+                                    "Desde:",
+                                    value=fechas_disponibles[0],
+                                    min_value=fechas_disponibles[0],
+                                    max_value=fechas_disponibles[-1],
+                                    key="fecha_inicio_hist"
+                                )
+                                fecha_fin_hist = st.date_input(
+                                    "Hasta:",
+                                    value=fechas_disponibles[-1],
+                                    min_value=fechas_disponibles[0],
+                                    max_value=fechas_disponibles[-1],
+                                    key="fecha_fin_hist"
+                                )
                 
-                # APLICAR FILTROS
+                # APLICAR FILTROS RELACIONADOS
                 df_filtered = df_historico.copy()
                 
+                # 1. Filtro de negativos
                 if solo_negativos_hist:
                     df_filtered = df_filtered[df_filtered["Stock"] < 0]
                 
+                # 2. Filtro por Zonas (multiselect)
+                if zonas_seleccionadas:
+                    df_filtered = df_filtered[df_filtered["CompanyId"].isin(zonas_seleccionadas)]
+                else:
+                    # Si no hay zonas seleccionadas, no mostrar nada
+                    df_filtered = df_filtered[df_filtered["CompanyId"].isin([])]
+                
+                # 3. Filtro por Almacenes (multiselect relacionado)
+                if almacenes_seleccionados:
+                    df_filtered = df_filtered[df_filtered["InventLocationId"].isin(almacenes_seleccionados)]
+                else:
+                    # Si no hay almacenes seleccionados, no mostrar nada
+                    df_filtered = df_filtered[df_filtered["InventLocationId"].isin([])]
+                
+                # 4. Búsqueda de código
                 if buscar_codigo_hist:
                     mask = df_filtered["ProductId"].astype(str).str.contains(buscar_codigo_hist, case=False, na=False)
                     df_filtered = df_filtered[mask]
                 
-                # Filtro por Zona/Compañía
-                if company_hist != "Todas":
-                    df_filtered = df_filtered[df_filtered["CompanyId"] == company_hist]
-                
-                if almacen_hist != "Todos":
-                    df_filtered = df_filtered[df_filtered["InventLocationId"] == almacen_hist]
-                
-                if codigos_excluir_hist.strip():
+                # 5. Filtros de exclusión/inclusión
+                if codigos_excluir_hist and codigos_excluir_hist.strip():
                     codigos_excl = [c.strip() for c in codigos_excluir_hist.split(",") if c.strip()]
                     df_filtered = df_filtered[~df_filtered["ProductId"].astype(str).isin(codigos_excl)]
                 
-                if codigos_incluir_hist.strip():
+                if codigos_incluir_hist and codigos_incluir_hist.strip():
                     codigos_incl = [c.strip() for c in codigos_incluir_hist.split(",") if c.strip()]
                     df_filtered = df_filtered[df_filtered["ProductId"].astype(str).isin(codigos_incl)]
                 
@@ -2105,41 +2168,79 @@ def main():
                         hide_index=True
                     )
                     
-                    # ESTADÍSTICAS
+                    # ESTADÍSTICAS CON TARJETAS PROFESIONALES
                     st.markdown("---")
-                    st.markdown("#### 📊 Estadísticas de la Vista Actual")
+                    st.markdown("### 📊 Panel de Control - Vista Filtrada")
                     
+                    # Calcular métricas
+                    fecha_max_filtrada = df_filtered["fecha"].max()
+                    df_filtered_ultimo = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
+                    total_stock_ultimo = abs(df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0]["Stock"].sum())
+                    costo_filtrado = abs(df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0]["CostStock"].sum())
+                    pallets_vista = len(historico_pivot)
+                    productos_vista = historico_pivot["Codigo"].nunique()
+                    almacenes_vista = historico_pivot["Almacen"].nunique()
+                    zonas_vista = historico_pivot["Zona"].nunique()
+                    
+                    # Tarjetas principales en 2 filas
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown(f"""
+                        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                                    padding: 20px; border-radius: 10px; color: white; text-align: center;">
+                            <h4 style="margin: 0; font-size: 16px;">💰 IMPACTO ECONÓMICO</h4>
+                            <h1 style="margin: 10px 0; font-size: 32px;">${costo_filtrado:,.0f}</h1>
+                            <p style="margin: 0; font-size: 12px; opacity: 0.9;">{fecha_max_filtrada.strftime('%d/%m/%Y')}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col2:
+                        st.markdown(f"""
+                        <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); 
+                                    padding: 20px; border-radius: 10px; color: white; text-align: center;">
+                            <h4 style="margin: 0; font-size: 16px;">📦 UNIDADES NEGATIVAS</h4>
+                            <h1 style="margin: 10px 0; font-size: 32px;">{total_stock_ultimo:,.0f}</h1>
+                            <p style="margin: 0; font-size: 12px; opacity: 0.9;">Stock negativo total</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col3:
+                        st.markdown(f"""
+                        <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); 
+                                    padding: 20px; border-radius: 10px; color: white; text-align: center;">
+                            <h4 style="margin: 0; font-size: 16px;">🎯 COBERTURA</h4>
+                            <h1 style="margin: 10px 0; font-size: 32px;">{zonas_vista} / {almacenes_vista}</h1>
+                            <p style="margin: 0; font-size: 12px; opacity: 0.9;">Zonas / Almacenes</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    # Tarjetas secundarias
                     col1, col2, col3, col4 = st.columns(4)
                     
                     with col1:
-                        # CORREGIDO: Usar df_filtered_ultimo directo, no el pivote
-                        fecha_max_filtrada = df_filtered["fecha"].max()
-                        df_filtered_ultimo = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
-                        total_stock_ultimo = abs(df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0]["Stock"].sum())
-                        st.metric("Total Stock Negativo (Último Día)", f"{total_stock_ultimo:,.0f}",
-                                 help=f"Stock negativo total en {fecha_max_filtrada.strftime('%Y-%m-%d')}")
+                        st.metric("📋 Pallets en Vista", f"{pallets_vista:,}", 
+                                 help=f"Registros únicos (producto + pallet)")
                     
                     with col2:
-                        pallets_vista = len(historico_pivot)
-                        productos_vista = historico_pivot["Codigo"].nunique()
-                        st.metric("Pallets en Vista", f"{pallets_vista:,}", help=f"{productos_vista:,} productos únicos")
+                        st.metric("🔢 Productos Únicos", f"{productos_vista:,}",
+                                 help="Códigos de producto diferentes")
                     
                     with col3:
                         if fecha_cols_hist:
-                            # Promedio de valores negativos
                             valores_negativos = historico_pivot[fecha_cols_hist].select_dtypes(include=[np.number])
                             valores_negativos = valores_negativos[valores_negativos < 0]
                             promedio_neg_hist = abs(valores_negativos.mean().mean())
                             promedio_display_hist = f"{promedio_neg_hist:.1f}" if pd.notna(promedio_neg_hist) else "N/A"
-                            st.metric("Promedio Negativo", promedio_display_hist)
+                            st.metric("📊 Promedio por Registro", promedio_display_hist,
+                                     help="Promedio de unidades negativas por registro")
                     
                     with col4:
-                        # CORREGIDO: Costo solo del último día filtrado
-                        fecha_max_filtrada = df_filtered["fecha"].max()
-                        df_filtered_ultimo = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
-                        costo_filtrado = abs(df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0]["CostStock"].sum())
-                        st.metric("Costo Filtrado (Último Día)", f"${costo_filtrado:,.0f}", 
-                                 help=f"Costo del inventario negativo filtrado en {fecha_max_filtrada.strftime('%Y-%m-%d')}")
+                        costo_promedio_producto = costo_filtrado / productos_vista if productos_vista > 0 else 0
+                        st.metric("💵 Costo Prom/Producto", f"${costo_promedio_producto:,.0f}",
+                                 help="Costo promedio por producto único")
                     
                     # VISUALIZACIONES
                     st.markdown("---")
