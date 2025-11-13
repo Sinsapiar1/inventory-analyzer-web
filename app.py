@@ -2406,13 +2406,19 @@ def main():
                     column_config = {}
                     
                     # Configurar columnas de fechas con formato condicional
+                    # IMPORTANTE: Convertir pd.Timestamp a string para column_config
                     for fecha_col in fecha_cols_hist:
                         fecha_str = fecha_col.strftime('%Y-%m-%d')
-                        column_config[fecha_col] = st.column_config.NumberColumn(
+                        # Usar la fecha como string en lugar del objeto Timestamp
+                        column_config[fecha_str] = st.column_config.NumberColumn(
                             fecha_str,
                             help=f"Stock al {fecha_str}",
                             format="%d"
                         )
+                    
+                    # Renombrar columnas de fechas en el DataFrame antes de mostrar
+                    rename_dict = {fecha_col: fecha_col.strftime('%Y-%m-%d') for fecha_col in fecha_cols_hist}
+                    historico_pivot = historico_pivot.rename(columns=rename_dict)
                     
                     # Configuración para columna de críticos
                     if resaltar_criticos and "_Es_Critico" in historico_pivot.columns:
