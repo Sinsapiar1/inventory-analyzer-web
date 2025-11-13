@@ -1988,8 +1988,9 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # SECCIÓN 1: Filtros geográficos con botones de control
-                    st.markdown("#### 🌍 Filtros Geográficos (Relacionados)")
+                    # SECCIÓN 1: Filtros geográficos (SIMPLIFICADO - SIN BOTONES)
+                    st.markdown("#### 🌍 Filtros Geográficos")
+                    st.caption("💡 Selecciona zonas y almacenes directamente. Los almacenes se filtran automáticamente según las zonas elegidas.")
                     
                     col1, col2 = st.columns(2)
                     
@@ -1997,39 +1998,15 @@ def main():
                         st.markdown("**🏢 Zonas/Compañías**")
                         todas_zonas = sorted(df_historico["CompanyId"].unique().tolist())
                         
-                        # Inicializar valor por defecto (key interno separado del widget)
-                        if '_default_zonas' not in st.session_state:
-                            st.session_state['_default_zonas'] = todas_zonas
-                        
-                        # Botones de control rápido
-                        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
-                        with col_btn1:
-                            if st.button("✅ Todas", key="btn_todas_zonas", use_container_width=True):
-                                st.session_state['_default_zonas'] = todas_zonas
-                                # Forzar recarga del widget eliminando su key
-                                if 'zonas_multiselect' in st.session_state:
-                                    del st.session_state['zonas_multiselect']
-                                st.rerun()
-                        with col_btn2:
-                            if st.button("❌ Ninguna", key="btn_ninguna_zona", use_container_width=True):
-                                st.session_state['_default_zonas'] = []
-                                # Forzar recarga del widget eliminando su key
-                                if 'zonas_multiselect' in st.session_state:
-                                    del st.session_state['zonas_multiselect']
-                                st.rerun()
-                        
-                        # Multiselect de zonas
+                        # Multiselect simple - por defecto todas
                         zonas_seleccionadas = st.multiselect(
-                            "Selecciona una o más zonas:",
+                            "Selecciona zonas:",
                             options=todas_zonas,
-                            default=st.session_state['_default_zonas'],
+                            default=todas_zonas,
                             key="zonas_multiselect",
-                            help="💡 Los almacenes se filtran automáticamente según las zonas seleccionadas",
+                            help="Puedes seleccionar múltiples zonas. Los almacenes se filtrarán automáticamente.",
                             label_visibility="collapsed"
                         )
-                        
-                        # Sincronizar el valor actual con el default para próxima carga
-                        st.session_state['_default_zonas'] = zonas_seleccionadas
                         
                         # Indicador visual
                         if len(zonas_seleccionadas) == len(todas_zonas):
@@ -2037,10 +2014,10 @@ def main():
                         elif len(zonas_seleccionadas) == 0:
                             st.warning("⚠️ Ninguna zona seleccionada")
                         else:
-                            st.info(f"📊 {len(zonas_seleccionadas)}/{len(todas_zonas)} zonas seleccionadas")
+                            st.info(f"📊 {len(zonas_seleccionadas)}/{len(todas_zonas)} zonas")
                     
                     with col2:
-                        st.markdown("**🏭 Almacenes (Filtrado Dinámico)**")
+                        st.markdown("**🏭 Almacenes**")
                         
                         # FILTRO RELACIONADO: Solo mostrar almacenes de las zonas seleccionadas
                         if zonas_seleccionadas:
@@ -2050,55 +2027,20 @@ def main():
                         else:
                             almacenes_disponibles = []
                         
-                        # Inicializar o actualizar default de almacenes según zonas
-                        if '_default_almacenes' not in st.session_state:
-                            st.session_state['_default_almacenes'] = almacenes_disponibles
-                        else:
-                            # Filtrar almacenes guardados para solo incluir los disponibles
-                            almacenes_filtrados = [
-                                a for a in st.session_state['_default_almacenes'] 
-                                if a in almacenes_disponibles
-                            ]
-                            # Si no quedó ninguno válido, seleccionar todos los disponibles
-                            if not almacenes_filtrados and almacenes_disponibles:
-                                st.session_state['_default_almacenes'] = almacenes_disponibles
-                            else:
-                                st.session_state['_default_almacenes'] = almacenes_filtrados
-                        
-                        # Botones de control rápido
-                        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
-                        with col_btn1:
-                            if st.button("✅ Todos", key="btn_todos_alm", use_container_width=True, disabled=len(almacenes_disponibles)==0):
-                                st.session_state['_default_almacenes'] = almacenes_disponibles
-                                # Forzar recarga del widget eliminando su key
-                                if 'almacenes_multiselect' in st.session_state:
-                                    del st.session_state['almacenes_multiselect']
-                                st.rerun()
-                        with col_btn2:
-                            if st.button("❌ Ninguno", key="btn_ningun_alm", use_container_width=True, disabled=len(almacenes_disponibles)==0):
-                                st.session_state['_default_almacenes'] = []
-                                # Forzar recarga del widget eliminando su key
-                                if 'almacenes_multiselect' in st.session_state:
-                                    del st.session_state['almacenes_multiselect']
-                                st.rerun()
-                        
-                        # Multiselect de almacenes
+                        # Multiselect simple - por defecto todos los disponibles
                         almacenes_seleccionados = st.multiselect(
-                            "Selecciona uno o más almacenes:",
+                            "Selecciona almacenes:",
                             options=almacenes_disponibles,
-                            default=st.session_state['_default_almacenes'],
+                            default=almacenes_disponibles,
                             key="almacenes_multiselect",
-                            help="💡 Solo se muestran almacenes de las zonas seleccionadas arriba",
+                            help="Se muestran solo almacenes de las zonas seleccionadas",
                             label_visibility="collapsed",
                             disabled=len(zonas_seleccionadas) == 0
                         )
                         
-                        # Sincronizar el valor actual con el default para próxima carga
-                        st.session_state['_default_almacenes'] = almacenes_seleccionados
-                        
                         # Indicador visual
                         if len(almacenes_disponibles) == 0:
-                            st.error("❌ Selecciona al menos una zona primero")
+                            st.error("❌ Selecciona al menos una zona")
                         elif len(almacenes_seleccionados) == len(almacenes_disponibles):
                             st.success(f"✅ Todos los almacenes ({len(almacenes_disponibles)})")
                         elif len(almacenes_seleccionados) == 0:
@@ -2110,7 +2052,7 @@ def main():
                     
                     # SECCIÓN 2: Otros filtros
                     st.markdown("#### 🔍 Filtros Adicionales")
-                    col1, col2, col3 = st.columns([2, 1, 1])
+                    col1, col2 = st.columns([3, 1])
                     
                     with col1:
                         buscar_codigo_hist = st.text_input(
@@ -2124,25 +2066,12 @@ def main():
                     
                     with col2:
                         max_rows_display = st.selectbox(
-                            "📋 Máximo de filas a mostrar:",
+                            "📋 Máximo de filas:",
                             options=[100, 500, 1000, 5000, "Todas"],
                             index=1,
                             key="max_rows_hist",
-                            help="Limitar filas mejora el rendimiento con grandes volúmenes"
+                            help="Limitar filas mejora el rendimiento"
                         )
-                    
-                    with col3:
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        if st.button("🔄 Restablecer Filtros", key="btn_reset_filtros", use_container_width=True):
-                            # Actualizar defaults
-                            st.session_state['_default_zonas'] = todas_zonas
-                            st.session_state['_default_almacenes'] = almacenes_disponibles
-                            # Forzar recarga eliminando keys de los widgets
-                            if 'zonas_multiselect' in st.session_state:
-                                del st.session_state['zonas_multiselect']
-                            if 'almacenes_multiselect' in st.session_state:
-                                del st.session_state['almacenes_multiselect']
-                            st.rerun()
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
