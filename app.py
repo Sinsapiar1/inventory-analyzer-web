@@ -2382,9 +2382,8 @@ def main():
                         elif ordenar_tabla == "Almacén":
                             historico_pivot = historico_pivot.sort_values("Almacen")
                         
-                        # Agregar columna de total si se solicita
-                        if mostrar_totales:
-                            historico_pivot["Total_Historico"] = historico_pivot[fecha_cols_hist].sum(axis=1, skipna=True)
+                        # Agregar columna de total si se solicita (DESPUÉS del rename)
+                        # Nota: Esta parte se ejecuta ANTES del rename, así que guardamos fecha_cols_str para después
                         
                         # Identificar filas críticas
                         if resaltar_criticos:
@@ -2407,8 +2406,10 @@ def main():
                     
                     # Configurar columnas de fechas con formato condicional
                     # IMPORTANTE: Convertir pd.Timestamp a string para column_config
+                    fecha_cols_str = []  # Guardar nombres de columnas como strings
                     for fecha_col in fecha_cols_hist:
                         fecha_str = fecha_col.strftime('%Y-%m-%d')
+                        fecha_cols_str.append(fecha_str)
                         # Usar la fecha como string en lugar del objeto Timestamp
                         column_config[fecha_str] = st.column_config.NumberColumn(
                             fecha_str,
@@ -2419,6 +2420,15 @@ def main():
                     # Renombrar columnas de fechas en el DataFrame antes de mostrar
                     rename_dict = {fecha_col: fecha_col.strftime('%Y-%m-%d') for fecha_col in fecha_cols_hist}
                     historico_pivot = historico_pivot.rename(columns=rename_dict)
+                    
+                    # Agregar columna de total si se solicita (DESPUÉS del rename)
+                    if mostrar_totales:
+                        historico_pivot["Total_Historico"] = historico_pivot[fecha_cols_str].sum(axis=1, skipna=True)
+                    
+                    # REEMPLAZAR None POR VALORES VACÍOS para que el CSS funcione
+                    for fecha_str in fecha_cols_str:
+                        if fecha_str in historico_pivot.columns:
+                            historico_pivot[fecha_str] = historico_pivot[fecha_str].replace({None: pd.NA})
                     
                     # Configuración para columna de críticos
                     if resaltar_criticos and "_Es_Critico" in historico_pivot.columns:
@@ -2432,22 +2442,21 @@ def main():
                         cols_order = ["_Es_Critico"] + [c for c in historico_pivot.columns if c != "_Es_Critico"]
                         historico_pivot = historico_pivot[cols_order]
                     
-                    # MOSTRAR TABLA CON COLORES
-                    st.markdown(f"""
-                    <style>
-                    /* Estilo para celdas None/vacías */
-                    .stDataFrame td:empty {{
-                        background-color: {color_celdas_none} !important;
-                    }}
-                    /* Resaltar celdas con valores negativos muy altos */
-                    .stDataFrame td[data-value*="-"] {{
-                        font-weight: bold;
-                    }}
-                    </style>
-                    """, unsafe_allow_html=True)
+                    # FUNCIÓN PARA APLICAR ESTILO A CELDAS VACÍAS
+                    def highlight_empty_cells(val):
+                        """Aplica color de fondo a celdas vacías (None, NaN, pd.NA)"""
+                        if pd.isna(val):
+                            return f'background-color: {color_celdas_none}'
+                        return ''
+                    
+                    # Aplicar estilos solo a columnas de fechas
+                    styled_pivot = historico_pivot.style.applymap(
+                        highlight_empty_cells,
+                        subset=fecha_cols_str
+                    )
                     
                     st.dataframe(
-                        historico_pivot,
+                        styled_pivot,
                         column_config=column_config,
                         width='stretch',
                         height=500,
@@ -2546,17 +2555,18 @@ def main():
                     st.markdown("---")
                     st.markdown("### 📈 Análisis Visual de Datos Filtrados")
                     
-                    if fecha_cols_hist and len(historico_pivot) > 0:
+                    if fecha_cols_str and len(historico_pivot) > 0:
                         # Fila 1: Evolución Total y Distribución por Zona
                         col1, col2 = st.columns(2)
                         
                         with col1:
                             evolution_data_hist = []
-                            for fecha in sorted(fecha_cols_hist):
-                                columna = pd.to_numeric(historico_pivot[fecha], errors='coerce')
-                                total = columna.sum(skipna=True)
-                                if pd.notna(total) and total != 0:
-                                    evolution_data_hist.append({"Fecha": fecha, "Total": abs(total)})
+                            for fecha_str in sorted(fecha_cols_str):
+                                if fecha_str in historico_pivot.columns:
+                                    columna = pd.to_numeric(historico_pivot[fecha_str], errors='coerce')
+                                    total = columna.sum(skipna=True)
+                                    if pd.notna(total) and total != 0:
+                                        evolution_data_hist.append({"Fecha": fecha_str, "Total": abs(total)})
                             
                             if evolution_data_hist:
                                 evo_df_hist = pd.DataFrame(evolution_data_hist)
@@ -2578,9 +2588,10 @@ def main():
                                 if pd.notna(zona):
                                     subset = historico_pivot[historico_pivot["Zona"] == zona]
                                     total = 0
-                                    for fecha in fecha_cols_hist:
-                                        columna_numerica = pd.to_numeric(subset[fecha], errors='coerce')
-                                        total += columna_numerica.sum(skipna=True)
+                                    for fecha_str in fecha_cols_str:
+                                        if fecha_str in subset.columns:
+                                            columna_numerica = pd.to_numeric(subset[fecha_str], errors='coerce')
+                                            total += columna_numerica.sum(skipna=True)
                                     
                                     if total != 0:
                                         zona_data_hist[zona] = abs(total)
@@ -2624,9 +2635,10 @@ def main():
                                 if pd.notna(almacen):
                                     subset = historico_pivot[historico_pivot["Almacen"] == almacen]
                                     total = 0
-                                    for fecha in fecha_cols_hist:
-                                        columna_numerica = pd.to_numeric(subset[fecha], errors='coerce')
-                                        total += columna_numerica.sum(skipna=True)
+                                    for fecha_str in fecha_cols_str:
+                                        if fecha_str in subset.columns:
+                                            columna_numerica = pd.to_numeric(subset[fecha_str], errors='coerce')
+                                            total += columna_numerica.sum(skipna=True)
                                     
                                     if total != 0:
                                         almacen_data_hist[almacen] = abs(total)
@@ -2716,9 +2728,10 @@ def main():
                                 valores = []
                                 fechas_validas = []
                                 
-                                for fecha in sorted(fecha_cols_hist):
-                                    valor = row[fecha]
-                                    try:
+                                for fecha_str in sorted(fecha_cols_str):
+                                    if fecha_str in row.index:
+                                        valor = row[fecha_str]
+                                        try:
                                         valor_num = pd.to_numeric(valor, errors='coerce')
                                         if pd.notna(valor_num) and valor_num != 0:
                                             valores.append(valor_num)
