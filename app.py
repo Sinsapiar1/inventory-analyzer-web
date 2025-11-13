@@ -937,23 +937,29 @@ def export_preprocessed_report(df_procesado, stats, fecha_suffix=None):
 @st.cache_data(ttl=3600)  # Cache por 1 hora
 def download_and_connect_db():
     """
-    Descarga DB desde GitHub (repositorio privado) y retorna path del archivo temporal
+    Descarga DB desde GitHub (repositorio privado) usando GitHub API
     
     Requiere GITHUB_TOKEN en Streamlit secrets para acceder a repositorio privado.
     
     Returns:
         tuple: (db_path, success, error_message)
     """
-    url = "https://raw.githubusercontent.com/Sinsapiar1/alsina-negativos-db/main/negativos_inventario.db"
+    # Usar GitHub API en lugar de raw.githubusercontent.com para repos privados
+    api_url = "https://api.github.com/repos/Sinsapiar1/alsina-negativos-db/contents/negativos_inventario.db"
     
     try:
-        # Preparar headers con autenticación si existe el token
-        headers = {}
-        if hasattr(st, 'secrets') and 'GITHUB_TOKEN' in st.secrets:
-            headers['Authorization'] = f"token {st.secrets['GITHUB_TOKEN']}"
+        # Verificar que existe el token
+        if not (hasattr(st, 'secrets') and 'GITHUB_TOKEN' in st.secrets):
+            return None, False, "Token de GitHub no configurado. Ve a Settings → Secrets en Streamlit Cloud y agrega GITHUB_TOKEN"
         
-        # Descargar archivo
-        response = requests.get(url, headers=headers, timeout=30)
+        # Preparar headers con autenticación
+        headers = {
+            'Authorization': f"token {st.secrets['GITHUB_TOKEN']}",
+            'Accept': 'application/vnd.github.v3.raw'  # Obtener contenido raw directamente
+        }
+        
+        # Descargar archivo usando GitHub API
+        response = requests.get(api_url, headers=headers, timeout=30)
         response.raise_for_status()
         
         # Guardar en archivo temporal
@@ -963,10 +969,23 @@ def download_and_connect_db():
         
         # Verificar que se puede conectar
         conn = sqlite3.connect(temp_file.name)
+        cursor = conn.cursor()
+        # Verificar que existe la tabla inventario
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inventario'")
+        if not cursor.fetchone():
+            conn.close()
+            return None, False, "La tabla 'inventario' no existe en la base de datos"
         conn.close()
         
         return temp_file.name, True, None
         
+    except requests.HTTPError as e:
+        if e.response.status_code == 404:
+            return None, False, f"Archivo no encontrado (404). Verifica que el archivo 'negativos_inventario.db' existe en el repositorio"
+        elif e.response.status_code == 401:
+            return None, False, f"Token inválido o sin permisos (401). Verifica que el token tenga scope 'repo'"
+        else:
+            return None, False, f"Error HTTP {e.response.status_code}: {str(e)}"
     except requests.RequestException as e:
         return None, False, f"Error de red: {str(e)}"
     except sqlite3.Error as e:
