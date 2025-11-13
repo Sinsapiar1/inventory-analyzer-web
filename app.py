@@ -1997,28 +1997,30 @@ def main():
                         st.markdown("**🏢 Zonas/Compañías**")
                         todas_zonas = sorted(df_historico["CompanyId"].unique().tolist())
                         
+                        # Inicializar session_state si no existe
+                        if 'zonas_multiselect' not in st.session_state:
+                            st.session_state['zonas_multiselect'] = todas_zonas
+                        
                         # Botones de control rápido
                         col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
                         with col_btn1:
                             if st.button("✅ Todas", key="btn_todas_zonas", use_container_width=True):
-                                st.session_state['zonas_seleccionadas_temp'] = todas_zonas
+                                st.session_state['zonas_multiselect'] = todas_zonas
                                 st.rerun()
                         with col_btn2:
                             if st.button("❌ Ninguna", key="btn_ninguna_zona", use_container_width=True):
-                                st.session_state['zonas_seleccionadas_temp'] = []
+                                st.session_state['zonas_multiselect'] = []
                                 st.rerun()
                         
-                        # Multiselect de zonas
-                        default_zonas = st.session_state.get('zonas_seleccionadas_temp', todas_zonas)
+                        # Multiselect de zonas (usa el mismo key que actualizan los botones)
                         zonas_seleccionadas = st.multiselect(
                             "Selecciona una o más zonas:",
                             options=todas_zonas,
-                            default=default_zonas,
+                            default=st.session_state['zonas_multiselect'],
                             key="zonas_multiselect",
                             help="💡 Los almacenes se filtran automáticamente según las zonas seleccionadas",
                             label_visibility="collapsed"
                         )
-                        st.session_state['zonas_seleccionadas_temp'] = zonas_seleccionadas
                         
                         # Indicador visual
                         if len(zonas_seleccionadas) == len(todas_zonas):
@@ -2039,32 +2041,40 @@ def main():
                         else:
                             almacenes_disponibles = []
                         
+                        # Inicializar o actualizar almacenes según zonas seleccionadas
+                        if 'almacenes_multiselect' not in st.session_state:
+                            st.session_state['almacenes_multiselect'] = almacenes_disponibles
+                        else:
+                            # Filtrar almacenes guardados para solo incluir los disponibles
+                            st.session_state['almacenes_multiselect'] = [
+                                a for a in st.session_state['almacenes_multiselect'] 
+                                if a in almacenes_disponibles
+                            ]
+                            # Si no quedó ninguno, seleccionar todos los disponibles
+                            if not st.session_state['almacenes_multiselect'] and almacenes_disponibles:
+                                st.session_state['almacenes_multiselect'] = almacenes_disponibles
+                        
                         # Botones de control rápido
                         col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
                         with col_btn1:
                             if st.button("✅ Todos", key="btn_todos_alm", use_container_width=True, disabled=len(almacenes_disponibles)==0):
-                                st.session_state['almacenes_seleccionados_temp'] = almacenes_disponibles
+                                st.session_state['almacenes_multiselect'] = almacenes_disponibles
                                 st.rerun()
                         with col_btn2:
                             if st.button("❌ Ninguno", key="btn_ningun_alm", use_container_width=True, disabled=len(almacenes_disponibles)==0):
-                                st.session_state['almacenes_seleccionados_temp'] = []
+                                st.session_state['almacenes_multiselect'] = []
                                 st.rerun()
                         
-                        # Multiselect de almacenes
-                        default_almacenes = st.session_state.get('almacenes_seleccionados_temp', almacenes_disponibles)
-                        # Filtrar default_almacenes para solo incluir los que están en almacenes_disponibles
-                        default_almacenes = [a for a in default_almacenes if a in almacenes_disponibles]
-                        
+                        # Multiselect de almacenes (usa el mismo key que actualizan los botones)
                         almacenes_seleccionados = st.multiselect(
                             "Selecciona uno o más almacenes:",
                             options=almacenes_disponibles,
-                            default=default_almacenes,
+                            default=st.session_state['almacenes_multiselect'],
                             key="almacenes_multiselect",
                             help="💡 Solo se muestran almacenes de las zonas seleccionadas arriba",
                             label_visibility="collapsed",
                             disabled=len(zonas_seleccionadas) == 0
                         )
-                        st.session_state['almacenes_seleccionados_temp'] = almacenes_seleccionados
                         
                         # Indicador visual
                         if len(almacenes_disponibles) == 0:
@@ -2104,8 +2114,9 @@ def main():
                     with col3:
                         st.markdown("<br>", unsafe_allow_html=True)
                         if st.button("🔄 Restablecer Filtros", key="btn_reset_filtros", use_container_width=True):
-                            st.session_state['zonas_seleccionadas_temp'] = todas_zonas
-                            st.session_state['almacenes_seleccionados_temp'] = almacenes_disponibles
+                            st.session_state['zonas_multiselect'] = todas_zonas
+                            if almacenes_disponibles:
+                                st.session_state['almacenes_multiselect'] = almacenes_disponibles
                             st.rerun()
                     
                     st.markdown("<br>", unsafe_allow_html=True)
