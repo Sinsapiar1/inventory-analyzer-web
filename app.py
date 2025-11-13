@@ -1857,71 +1857,44 @@ def main():
             else:
                 st.success(f"✅ Base de datos cargada exitosamente: {len(df_historico):,} registros")
                 
-                # DEBUG: Mostrar información de la estructura de datos
-                with st.expander("🔍 Debug: Estructura de Datos (para verificación)", expanded=True):
-                    ultima_fecha = df_historico["fecha"].max()
-                    
-                    st.write("### Análisis del Almacén 612D")
-                    st.write(f"**Última fecha disponible:** {ultima_fecha}")
-                    
-                    # Total de registros en 612D (último día)
-                    df_612d_ultimo = df_historico[(df_historico["InventLocationId"] == "612D") & 
-                                                   (df_historico["fecha"] == ultima_fecha)]
-                    df_612d_negativos = df_612d_ultimo[df_612d_ultimo["Stock"] < 0]
-                    
-                    st.write(f"**Total registros en 612D (último día):** {len(df_612d_ultimo)}")
-                    st.write(f"**Registros con Stock negativo:** {len(df_612d_negativos)}")
-                    
-                    # Calcular costo
-                    costo_612d_ultimo = abs(df_612d_negativos["CostStock"].sum())
-                    st.write(f"**Costo Total 612D (último día):** ${costo_612d_ultimo:,.2f}")
-                    
-                    # Mostrar resumen por producto
-                    st.write("### Resumen por Producto (612D, último día, negativos):")
-                    resumen_productos = df_612d_negativos.groupby(["ProductId", "ProductName_es"]).agg({
-                        "LabelId": "count",  # Cantidad de pallets
-                        "Stock": "sum",      # Total stock negativo
-                        "CostStock": "sum"   # Total costo
-                    }).reset_index()
-                    resumen_productos.columns = ["ProductId", "Producto", "Pallets", "Stock Total", "Costo Total"]
-                    resumen_productos["Costo Total"] = resumen_productos["Costo Total"].abs()
-                    resumen_productos = resumen_productos.sort_values("Costo Total", ascending=False)
-                    
-                    st.dataframe(resumen_productos, use_container_width=True, height=300)
-                    
-                    st.write("### Primeros 30 registros detallados:")
-                    ejemplo_612d = df_612d_negativos.sort_values("CostStock").head(30)
-                    st.dataframe(ejemplo_612d[["fecha", "ProductId", "ProductName_es", "LabelId", "Stock", "CostStock"]], 
-                               use_container_width=True, height=400)
+                # OBTENER ÚLTIMO DÍA DISPONIBLE
+                ultima_fecha = df_historico["fecha"].max()
+                df_ultimo_dia = df_historico[df_historico["fecha"] == ultima_fecha]
                 
-                # MÉTRICAS PRINCIPALES DE COSTOS
+                # MÉTRICAS PRINCIPALES DE COSTOS (SOLO ÚLTIMO DÍA)
+                st.info(f"📅 **Mostrando datos del último día disponible:** {ultima_fecha.strftime('%Y-%m-%d')}")
+                
                 col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
-                    total_registros = len(df_historico)
-                    st.metric("Total Registros", f"{total_registros:,}")
+                    registros_ultimo_dia = len(df_ultimo_dia)
+                    st.metric("Registros (Último Día)", f"{registros_ultimo_dia:,}", 
+                             help=f"Total de registros en {ultima_fecha.strftime('%Y-%m-%d')}")
                 
                 with col2:
                     fechas_unicas = df_historico["fecha"].nunique()
                     fecha_min = df_historico["fecha"].min().strftime("%Y-%m-%d")
                     fecha_max = df_historico["fecha"].max().strftime("%Y-%m-%d")
-                    st.metric("Días con Datos", fechas_unicas, help=f"Desde {fecha_min} hasta {fecha_max}")
+                    st.metric("Días en Histórico", fechas_unicas, help=f"Desde {fecha_min} hasta {fecha_max}")
                 
                 with col3:
-                    # CostStock ya viene negativo, tomamos valor absoluto para mostrar el impacto
-                    costo_total_negativo = abs(df_historico[df_historico["Stock"] < 0]["CostStock"].sum())
-                    st.metric("Costo Total Negativo", f"${costo_total_negativo:,.0f}")
+                    # CORREGIDO: Solo último día
+                    costo_total_ultimo_dia = abs(df_ultimo_dia[df_ultimo_dia["Stock"] < 0]["CostStock"].sum())
+                    st.metric("Costo Total Negativo", f"${costo_total_ultimo_dia:,.0f}",
+                             help=f"Costo del inventario negativo en {ultima_fecha.strftime('%Y-%m-%d')}")
                 
                 with col4:
-                    productos_unicos = df_historico["ProductId"].nunique()
-                    st.metric("Productos Únicos", f"{productos_unicos:,}")
+                    productos_ultimo_dia = df_ultimo_dia["ProductId"].nunique()
+                    productos_negativos = df_ultimo_dia[df_ultimo_dia["Stock"] < 0]["ProductId"].nunique()
+                    st.metric("Productos Únicos", f"{productos_ultimo_dia:,}",
+                             help=f"{productos_negativos:,} con stock negativo")
                 
-                # RESUMEN DE COSTOS POR ZONA
+                # RESUMEN DE COSTOS POR ZONA (SOLO ÚLTIMO DÍA)
                 st.markdown("---")
-                st.markdown("### 💰 Resumen de Costos por Zona")
+                st.markdown(f"### 💰 Resumen de Costos por Zona ({ultima_fecha.strftime('%Y-%m-%d')})")
                 
-                # Calcular costos por zona de forma más clara
-                costos_resumen = df_historico[df_historico["Stock"] < 0].groupby("CompanyId").agg({
+                # CORREGIDO: Solo último día
+                costos_resumen = df_ultimo_dia[df_ultimo_dia["Stock"] < 0].groupby("CompanyId").agg({
                     "CostStock": "sum",
                     "ProductId": "nunique",
                     "InventLocationId": "nunique"
@@ -1936,6 +1909,7 @@ def main():
                 costos_display["Costo Total ($)"] = costos_display["Costo Total ($)"].apply(lambda x: f"${x:,.0f}")
                 
                 st.dataframe(costos_display, use_container_width=True, height=200)
+                st.caption("💡 Los costos mostrados corresponden únicamente al último día disponible")
                 
                 st.markdown("---")
                 
@@ -2115,9 +2089,12 @@ def main():
                             st.metric("Promedio Negativo", promedio_display_hist)
                     
                     with col4:
-                        # Costo total de registros filtrados (valor absoluto)
-                        costo_filtrado = abs(df_filtered[df_filtered["Stock"] < 0]["CostStock"].sum())
-                        st.metric("Costo Filtrado", f"${costo_filtrado:,.0f}", help="Costo total del inventario negativo filtrado")
+                        # CORREGIDO: Costo solo del último día filtrado
+                        fecha_max_filtrada = df_filtered["fecha"].max()
+                        df_filtered_ultimo = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
+                        costo_filtrado = abs(df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0]["CostStock"].sum())
+                        st.metric("Costo Filtrado (Último Día)", f"${costo_filtrado:,.0f}", 
+                                 help=f"Costo del inventario negativo filtrado en {fecha_max_filtrada.strftime('%Y-%m-%d')}")
                     
                     # VISUALIZACIONES
                     st.markdown("---")
@@ -2175,15 +2152,19 @@ def main():
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            # Top Zonas por Costo (valor absoluto para mostrar impacto)
-                            costos_por_zona = df_filtered[df_filtered["Stock"] < 0].groupby("CompanyId")["CostStock"].sum()
+                            # Top Zonas por Costo (CORREGIDO: solo último día del rango filtrado)
+                            # Tomar la última fecha del rango filtrado
+                            fecha_max_filtrada = df_filtered["fecha"].max()
+                            df_filtered_ultimo = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
+                            
+                            costos_por_zona = df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0].groupby("CompanyId")["CostStock"].sum()
                             costos_por_zona = costos_por_zona.abs().sort_values(ascending=False).head(10)
                             if len(costos_por_zona) > 0:
                                 fig_costos_zona = px.bar(
                                     x=costos_por_zona.values,
                                     y=costos_por_zona.index,
                                     orientation='h',
-                                    title="💰 Top 10 Zonas por Costo Negativo",
+                                    title=f"💰 Top 10 Zonas por Costo ({fecha_max_filtrada.strftime('%Y-%m-%d')})",
                                     labels={"x": "Costo ($)", "y": "Zona"}
                                 )
                                 fig_costos_zona.update_traces(marker_color='#ff6b6b')
