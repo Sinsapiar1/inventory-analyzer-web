@@ -1858,25 +1858,41 @@ def main():
                 st.success(f"✅ Base de datos cargada exitosamente: {len(df_historico):,} registros")
                 
                 # DEBUG: Mostrar información de la estructura de datos
-                with st.expander("🔍 Debug: Estructura de Datos (para verificación)"):
-                    st.write("**Ejemplo de datos del almacén 612D:**")
-                    ejemplo_612d = df_historico[df_historico["InventLocationId"] == "612D"].sort_values("fecha", ascending=False).head(20)
-                    if len(ejemplo_612d) > 0:
-                        st.dataframe(ejemplo_612d[["fecha", "ProductId", "ProductName_es", "LabelId", "Stock", "CostStock"]], use_container_width=True)
-                        
-                        st.write("**Última fecha disponible:**", df_historico["fecha"].max())
-                        st.write("**Total de fechas únicas:**", df_historico["fecha"].nunique())
-                        
-                        # Analizar el 612D específicamente
-                        ultima_fecha = df_historico["fecha"].max()
-                        df_612d_ultimo = df_historico[(df_historico["InventLocationId"] == "612D") & 
-                                                       (df_historico["fecha"] == ultima_fecha) & 
-                                                       (df_historico["Stock"] < 0)]
-                        costo_612d_ultimo = abs(df_612d_ultimo["CostStock"].sum())
-                        st.write(f"**Costo 612D (último día):** ${costo_612d_ultimo:,.2f}")
-                        st.write(f"**Registros en 612D (último día, negativos):** {len(df_612d_ultimo)}")
-                    else:
-                        st.warning("No se encontraron datos para almacén 612D")
+                with st.expander("🔍 Debug: Estructura de Datos (para verificación)", expanded=True):
+                    ultima_fecha = df_historico["fecha"].max()
+                    
+                    st.write("### Análisis del Almacén 612D")
+                    st.write(f"**Última fecha disponible:** {ultima_fecha}")
+                    
+                    # Total de registros en 612D (último día)
+                    df_612d_ultimo = df_historico[(df_historico["InventLocationId"] == "612D") & 
+                                                   (df_historico["fecha"] == ultima_fecha)]
+                    df_612d_negativos = df_612d_ultimo[df_612d_ultimo["Stock"] < 0]
+                    
+                    st.write(f"**Total registros en 612D (último día):** {len(df_612d_ultimo)}")
+                    st.write(f"**Registros con Stock negativo:** {len(df_612d_negativos)}")
+                    
+                    # Calcular costo
+                    costo_612d_ultimo = abs(df_612d_negativos["CostStock"].sum())
+                    st.write(f"**Costo Total 612D (último día):** ${costo_612d_ultimo:,.2f}")
+                    
+                    # Mostrar resumen por producto
+                    st.write("### Resumen por Producto (612D, último día, negativos):")
+                    resumen_productos = df_612d_negativos.groupby(["ProductId", "ProductName_es"]).agg({
+                        "LabelId": "count",  # Cantidad de pallets
+                        "Stock": "sum",      # Total stock negativo
+                        "CostStock": "sum"   # Total costo
+                    }).reset_index()
+                    resumen_productos.columns = ["ProductId", "Producto", "Pallets", "Stock Total", "Costo Total"]
+                    resumen_productos["Costo Total"] = resumen_productos["Costo Total"].abs()
+                    resumen_productos = resumen_productos.sort_values("Costo Total", ascending=False)
+                    
+                    st.dataframe(resumen_productos, use_container_width=True, height=300)
+                    
+                    st.write("### Primeros 30 registros detallados:")
+                    ejemplo_612d = df_612d_negativos.sort_values("CostStock").head(30)
+                    st.dataframe(ejemplo_612d[["fecha", "ProductId", "ProductName_es", "LabelId", "Stock", "CostStock"]], 
+                               use_container_width=True, height=400)
                 
                 # MÉTRICAS PRINCIPALES DE COSTOS
                 col1, col2, col3, col4 = st.columns(4)
