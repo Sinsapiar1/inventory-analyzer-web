@@ -2732,12 +2732,12 @@ def main():
                                     if fecha_str in row.index:
                                         valor = row[fecha_str]
                                         try:
-                                        valor_num = pd.to_numeric(valor, errors='coerce')
-                                        if pd.notna(valor_num) and valor_num != 0:
-                                            valores.append(valor_num)
-                                            fechas_validas.append(fecha)
-                                    except:
-                                        continue
+                                            valor_num = pd.to_numeric(valor, errors='coerce')
+                                            if pd.notna(valor_num) and valor_num != 0:
+                                                valores.append(valor_num)
+                                                fechas_validas.append(fecha_str)
+                                        except:
+                                            continue
                                 
                                 if valores and fechas_validas:
                                     fig_lines_hist.add_trace(go.Scatter(
