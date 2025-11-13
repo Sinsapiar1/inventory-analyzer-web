@@ -2315,6 +2315,7 @@ def main():
                         "InventLocationId": "Almacen"
                     })
                     
+                    # Guardar columnas de fechas ANTES de renombrar (para ordenar correctamente)
                     fecha_cols_hist = sorted([c for c in historico_pivot.columns if isinstance(c, pd.Timestamp)])
                     otras_hist = [c for c in historico_pivot.columns if not isinstance(c, pd.Timestamp)]
                     historico_pivot = historico_pivot[otras_hist + fecha_cols_hist]
@@ -2682,7 +2683,8 @@ def main():
                                                                      '_' + historico_pivot_copy['ID_Pallet'].astype(str))
                             
                             historico_heat = historico_pivot_copy.head(max_rows_heat_hist)
-                            heatmap_data_hist = historico_heat.set_index('Codigo_Pallet')[fecha_cols_hist].copy()
+                            # CORRECCIÓN: Usar fecha_cols_str en lugar de fecha_cols_hist
+                            heatmap_data_hist = historico_heat.set_index('Codigo_Pallet')[fecha_cols_str].copy()
                             
                             for col in heatmap_data_hist.columns:
                                 heatmap_data_hist[col] = pd.to_numeric(heatmap_data_hist[col], errors='coerce')
@@ -2692,10 +2694,11 @@ def main():
                             if not heatmap_data_hist.empty:
                                 height_map_hist = max(500, len(heatmap_data_hist) * 25)
                                 
+                                # Labels del eje X también deben usar fecha_cols_str
                                 fig_heat_hist = px.imshow(
                                     heatmap_data_hist.values,
                                     labels=dict(x="Fecha", y="Código_Pallet", color="Stock"),
-                                    x=[d.strftime("%m/%d") for d in sorted(fecha_cols_hist)],
+                                    x=sorted(fecha_cols_str),  # Usar strings directamente
                                     y=heatmap_data_hist.index,
                                     title=f"Mapa de Calor - {len(heatmap_data_hist)} Pallets",
                                     color_continuous_scale="RdBu_r",
