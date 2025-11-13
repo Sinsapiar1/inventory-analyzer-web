@@ -2289,12 +2289,18 @@ def main():
                         ultima_fecha_hist = max(fecha_cols_hist)
                         historico_pivot = historico_pivot[historico_pivot[ultima_fecha_hist].notna() & (historico_pivot[ultima_fecha_hist] != 0)]
                     
-                    # Limitar filas según selección
-                    total_rows = len(historico_pivot)
-                    registros_sin_pallet = len(historico_pivot[historico_pivot["ID_Pallet"] == "SIN_PALLET"])
+                    # Guardar el DataFrame COMPLETO para exportación (ANTES de limitar)
+                    historico_pivot_completo = historico_pivot.copy()
                     
+                    # Calcular totales del DataFrame completo
+                    total_rows = len(historico_pivot_completo)
+                    registros_sin_pallet = len(historico_pivot_completo[historico_pivot_completo["ID_Pallet"] == "SIN_PALLET"])
+                    
+                    # Limitar filas SOLO para visualización en pantalla
                     if max_rows_display != "Todas":
-                        historico_pivot = historico_pivot.head(max_rows_display)
+                        historico_pivot_display = historico_pivot_completo.head(max_rows_display)
+                    else:
+                        historico_pivot_display = historico_pivot_completo
                     
                     # TABLA PRINCIPAL - COMPORTAMIENTO DIARIO CON MEJORAS SIGNIFICATIVAS
                     st.markdown("### 📅 Tabla de Comportamiento Diario (Producto + Pallet)")
@@ -2331,38 +2337,38 @@ def main():
                             key="color_none_hist"
                         )
                     
-                    # Aplicar ordenamiento
+                    # Aplicar ordenamiento AL DISPLAY (no al completo)
                     if fecha_cols_hist:
                         ultima_col = max(fecha_cols_hist)
                         
                         if ordenar_tabla == "Más Negativo (Último Día)":
-                            historico_pivot = historico_pivot.sort_values(
+                            historico_pivot_display = historico_pivot_display.sort_values(
                                 by=ultima_col,
                                 ascending=True,
                                 na_position='last'
                             )
                         elif ordenar_tabla == "Código (A-Z)":
-                            historico_pivot = historico_pivot.sort_values("Codigo")
+                            historico_pivot_display = historico_pivot_display.sort_values("Codigo")
                         elif ordenar_tabla == "Nombre (A-Z)":
-                            historico_pivot = historico_pivot.sort_values("Nombre")
+                            historico_pivot_display = historico_pivot_display.sort_values("Nombre")
                         elif ordenar_tabla == "Almacén":
-                            historico_pivot = historico_pivot.sort_values("Almacen")
+                            historico_pivot_display = historico_pivot_display.sort_values("Almacen")
                         
                         # Agregar columna de total si se solicita (DESPUÉS del rename)
                         # Nota: Esta parte se ejecuta ANTES del rename, así que guardamos fecha_cols_str para después
                         
-                        # Identificar filas críticas
+                        # Identificar filas críticas (en el display)
                         if resaltar_criticos:
-                            historico_pivot["_Es_Critico"] = historico_pivot[ultima_col].apply(
+                            historico_pivot_display["_Es_Critico"] = historico_pivot_display[ultima_col].apply(
                                 lambda x: "🔴 CRÍTICO" if pd.notna(x) and x < -100 else ""
                             )
                     
-                    # Información de registros
-                    info_msg = f"📋 **Mostrando {len(historico_pivot):,} de {total_rows:,} registros únicos** (producto + pallet)"
+                    # Información de registros (usar display para contar lo que se muestra)
+                    info_msg = f"📋 **Mostrando {len(historico_pivot_display):,} de {total_rows:,} registros únicos** (producto + pallet)"
                     if registros_sin_pallet > 0:
                         info_msg += f" | ⚠️ {registros_sin_pallet:,} productos sin ID de pallet"
                     if resaltar_criticos:
-                        num_criticos = len(historico_pivot[historico_pivot.get("_Es_Critico", "") == "🔴 CRÍTICO"])
+                        num_criticos = len(historico_pivot_display[historico_pivot_display.get("_Es_Critico", "") == "🔴 CRÍTICO"])
                         if num_criticos > 0:
                             info_msg += f" | 🔴 {num_criticos:,} registros críticos"
                     st.info(info_msg)
@@ -2383,30 +2389,34 @@ def main():
                             format="%d"
                         )
                     
-                    # Renombrar columnas de fechas en el DataFrame antes de mostrar
+                    # Renombrar columnas de fechas en el DataFrame DISPLAY
                     rename_dict = {fecha_col: fecha_col.strftime('%Y-%m-%d') for fecha_col in fecha_cols_hist}
-                    historico_pivot = historico_pivot.rename(columns=rename_dict)
+                    historico_pivot_display = historico_pivot_display.rename(columns=rename_dict)
+                    
+                    # También renombrar en el COMPLETO para exportación
+                    historico_pivot_completo = historico_pivot_completo.rename(columns=rename_dict)
                     
                     # Agregar columna de total si se solicita (DESPUÉS del rename)
                     if mostrar_totales:
-                        historico_pivot["Total_Historico"] = historico_pivot[fecha_cols_str].sum(axis=1, skipna=True)
+                        historico_pivot_display["Total_Historico"] = historico_pivot_display[fecha_cols_str].sum(axis=1, skipna=True)
+                        historico_pivot_completo["Total_Historico"] = historico_pivot_completo[fecha_cols_str].sum(axis=1, skipna=True)
                     
                     # REEMPLAZAR None POR VALORES VACÍOS para que el CSS funcione
                     for fecha_str in fecha_cols_str:
-                        if fecha_str in historico_pivot.columns:
-                            historico_pivot[fecha_str] = historico_pivot[fecha_str].replace({None: pd.NA})
+                        if fecha_str in historico_pivot_display.columns:
+                            historico_pivot_display[fecha_str] = historico_pivot_display[fecha_str].replace({None: pd.NA})
                     
                     # Configuración para columna de críticos
-                    if resaltar_criticos and "_Es_Critico" in historico_pivot.columns:
+                    if resaltar_criticos and "_Es_Critico" in historico_pivot_display.columns:
                         column_config["_Es_Critico"] = st.column_config.TextColumn(
                             "⚠️ Nivel",
                             help="Indica si el registro es crítico (< -100 unidades en último día)"
                         )
                     
                     # Reordenar columnas para poner crítico al principio si existe
-                    if resaltar_criticos and "_Es_Critico" in historico_pivot.columns:
-                        cols_order = ["_Es_Critico"] + [c for c in historico_pivot.columns if c != "_Es_Critico"]
-                        historico_pivot = historico_pivot[cols_order]
+                    if resaltar_criticos and "_Es_Critico" in historico_pivot_display.columns:
+                        cols_order = ["_Es_Critico"] + [c for c in historico_pivot_display.columns if c != "_Es_Critico"]
+                        historico_pivot_display = historico_pivot_display[cols_order]
                     
                     # FUNCIÓN PARA APLICAR ESTILO A CELDAS VACÍAS
                     def highlight_empty_cells(val):
@@ -2416,7 +2426,7 @@ def main():
                         return ''
                     
                     # Aplicar estilos solo a columnas de fechas
-                    styled_pivot = historico_pivot.style.applymap(
+                    styled_pivot = historico_pivot_display.style.applymap(
                         highlight_empty_cells,
                         subset=fecha_cols_str
                     )
@@ -2452,15 +2462,15 @@ def main():
                     st.markdown("---")
                     st.markdown("### 📊 Resumen de Datos Filtrados")
                     
-                    # Calcular métricas
+                    # Calcular métricas USANDO EL COMPLETO (no el display limitado)
                     fecha_max_filtrada = df_filtered["fecha"].max()
                     df_filtered_ultimo = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
                     total_stock_ultimo = abs(df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0]["Stock"].sum())
                     costo_filtrado = abs(df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0]["CostStock"].sum())
-                    pallets_vista = len(historico_pivot)
-                    productos_vista = historico_pivot["Codigo"].nunique()
-                    almacenes_vista = historico_pivot["Almacen"].nunique()
-                    zonas_vista = historico_pivot["Zona"].nunique()
+                    pallets_vista = len(historico_pivot_completo)
+                    productos_vista = historico_pivot_completo["Codigo"].nunique()
+                    almacenes_vista = historico_pivot_completo["Almacen"].nunique()
+                    zonas_vista = historico_pivot_completo["Zona"].nunique()
                     
                     # Métricas principales en tarjetas simples
                     col1, col2, col3, col4 = st.columns(4)
@@ -2727,15 +2737,21 @@ def main():
                             
                             st.plotly_chart(fig_lines_hist, use_container_width=True)
                     
-                    # DESCARGA
+                    # DESCARGA - USA EL DATAFRAME COMPLETO (NO LIMITADO)
                     st.markdown("---")
-                    csv_historico = historico_pivot.to_csv(index=False)
+                    st.markdown("### 📥 Exportación de Datos")
+                    
+                    # Información de lo que se exportará
+                    st.info(f"📊 El CSV incluirá **TODOS** los {len(historico_pivot_completo):,} registros (sin límite de filas)")
+                    
+                    csv_historico = historico_pivot_completo.to_csv(index=False)
                     st.download_button(
-                        label="📥 Descargar Histórico DB Filtrado (CSV)",
+                        label="📥 Descargar Histórico DB Filtrado COMPLETO (CSV)",
                         data=csv_historico,
                         file_name=f"Historico_DB_Filtrado_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                         mime="text/csv",
-                        help="Descarga datos filtrados incluyendo Zona, Código, Nombre, ID_Pallet, Almacén y evolución temporal"
+                        help=f"Descarga TODOS los {len(historico_pivot_completo):,} registros filtrados (Zona, Código, Nombre, ID_Pallet, Almacén y evolución temporal)",
+                        use_container_width=True
                     )
                 else:
                     st.warning("⚠️ No hay datos que coincidan con los filtros aplicados.")
