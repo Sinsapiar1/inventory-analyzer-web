@@ -2527,19 +2527,19 @@ def main():
                         st.metric("🎯 Zonas Activas", f"{zonas_vista}",
                                  help="Zonas/Compañías incluidas en la vista")
                     
-                    # VISUALIZACIONES
+                    # VISUALIZACIONES (USAR COMPLETO para análisis completo)
                     st.markdown("---")
                     st.markdown("### 📈 Análisis Visual de Datos Filtrados")
                     
-                    if fecha_cols_str and len(historico_pivot) > 0:
+                    if fecha_cols_str and len(historico_pivot_completo) > 0:
                         # Fila 1: Evolución Total y Distribución por Zona
                         col1, col2 = st.columns(2)
                         
                         with col1:
                             evolution_data_hist = []
                             for fecha_str in sorted(fecha_cols_str):
-                                if fecha_str in historico_pivot.columns:
-                                    columna = pd.to_numeric(historico_pivot[fecha_str], errors='coerce')
+                                if fecha_str in historico_pivot_completo.columns:
+                                    columna = pd.to_numeric(historico_pivot_completo[fecha_str], errors='coerce')
                                     total = columna.sum(skipna=True)
                                     if pd.notna(total) and total != 0:
                                         evolution_data_hist.append({"Fecha": fecha_str, "Total": abs(total)})
@@ -2560,9 +2560,9 @@ def main():
                         with col2:
                             # Distribución por Zona/Compañía
                             zona_data_hist = {}
-                            for zona in historico_pivot["Zona"].unique():
+                            for zona in historico_pivot_completo["Zona"].unique():
                                 if pd.notna(zona):
-                                    subset = historico_pivot[historico_pivot["Zona"] == zona]
+                                    subset = historico_pivot_completo[historico_pivot_completo["Zona"] == zona]
                                     total = 0
                                     for fecha_str in fecha_cols_str:
                                         if fecha_str in subset.columns:
@@ -2607,9 +2607,9 @@ def main():
                         with col2:
                             # Top Almacenes por Stock Negativo
                             almacen_data_hist = {}
-                            for almacen in historico_pivot["Almacen"].unique():
+                            for almacen in historico_pivot_completo["Almacen"].unique():
                                 if pd.notna(almacen):
-                                    subset = historico_pivot[historico_pivot["Almacen"] == almacen]
+                                    subset = historico_pivot_completo[historico_pivot_completo["Almacen"] == almacen]
                                     total = 0
                                     for fecha_str in fecha_cols_str:
                                         if fecha_str in subset.columns:
@@ -2633,7 +2633,7 @@ def main():
                                 fig_almacen_hist.update_layout(height=350)
                                 st.plotly_chart(fig_almacen_hist, use_container_width=True)
                         
-                        # MAPA DE CALOR
+                        # MAPA DE CALOR (USAR COMPLETO)
                         if len(fecha_cols_hist) > 1:
                             st.subheader("🔥 Mapa de Calor - Evolución por Pallet")
                             
@@ -2642,9 +2642,9 @@ def main():
                                 st.write("Controla cuántos pallets mostrar:")
                             with col2:
                                 opciones_heat_hist = [10, 20, 30, 50, 100]
-                                if len(historico_pivot) not in opciones_heat_hist:
-                                    opciones_heat_hist.append(len(historico_pivot))
-                                opciones_heat_hist = sorted([x for x in opciones_heat_hist if x <= len(historico_pivot)])
+                                if len(historico_pivot_completo) not in opciones_heat_hist:
+                                    opciones_heat_hist.append(len(historico_pivot_completo))
+                                opciones_heat_hist = sorted([x for x in opciones_heat_hist if x <= len(historico_pivot_completo)])
                                 
                                 max_rows_heat_hist = st.selectbox(
                                     "Pallets:",
@@ -2653,7 +2653,7 @@ def main():
                                     key="max_rows_heatmap_hist"
                                 )
                             
-                            historico_pivot_copy = historico_pivot.copy()
+                            historico_pivot_copy = historico_pivot_completo.copy()
                             historico_pivot_copy['Codigo_Pallet'] = (historico_pivot_copy['Codigo'].astype(str) + 
                                                                      '_' + historico_pivot_copy['ID_Pallet'].astype(str))
                             
@@ -2682,8 +2682,8 @@ def main():
                                 fig_heat_hist.update_layout(height=height_map_hist)
                                 st.plotly_chart(fig_heat_hist, use_container_width=True)
                         
-                        # LÍNEAS INDIVIDUALES
-                        if len(historico_pivot) >= 1:
+                        # LÍNEAS INDIVIDUALES (USAR COMPLETO)
+                        if len(historico_pivot_completo) >= 1:
                             st.subheader("📈 Evolución Individual por Pallet")
                             
                             col1, col2 = st.columns([3, 1])
@@ -2692,12 +2692,12 @@ def main():
                             with col2:
                                 max_lines_hist = st.selectbox(
                                     "Líneas:",
-                                    options=list(range(1, min(16, len(historico_pivot) + 1))),
-                                    index=min(4, len(historico_pivot) - 1),
+                                    options=list(range(1, min(16, len(historico_pivot_completo) + 1))),
+                                    index=min(4, len(historico_pivot_completo) - 1),
                                     key="max_lines_evolution_hist"
                                 )
                             
-                            pallets_to_show_hist = historico_pivot.head(max_lines_hist)
+                            pallets_to_show_hist = historico_pivot_completo.head(max_lines_hist)
                             fig_lines_hist = go.Figure()
                             colors = px.colors.qualitative.Set1[:max_lines_hist]
                             
