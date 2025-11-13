@@ -1160,7 +1160,7 @@ def main():
                 """)
 
     # ========== MODO 2: ANÁLISIS DE INVENTARIOS (ORIGINAL) ==========
-    else:
+    elif modo == "📊 Analizar Inventarios":
         # Sidebar para configuración
         with st.sidebar:
             st.header("⚙️ Configuración")
