@@ -2053,6 +2053,10 @@ def main():
                 
                 # CREAR TABLA PIVOTE (incluir CompanyId)
                 if len(df_filtered) > 0:
+                    # IMPORTANTE: Rellenar LabelId vacíos ANTES del pivot para no perder registros
+                    df_filtered["LabelId_Original"] = df_filtered["LabelId"]
+                    df_filtered["LabelId"] = df_filtered["LabelId"].fillna("SIN_PALLET").replace("", "SIN_PALLET")
+                    
                     df_filtered["ID_Unico"] = (df_filtered["ProductId"].astype(str) + "_" + 
                                               df_filtered["LabelId"].astype(str))
                     
@@ -2081,10 +2085,15 @@ def main():
                     
                     # Limitar filas según selección
                     total_rows = len(historico_pivot)
+                    registros_sin_pallet = len(historico_pivot[historico_pivot["ID_Pallet"] == "SIN_PALLET"])
+                    
                     if max_rows_display != "Todas":
                         historico_pivot = historico_pivot.head(max_rows_display)
                     
-                    st.info(f"📋 **Mostrando {len(historico_pivot):,} de {total_rows:,} registros únicos** (producto + pallet) con los filtros aplicados")
+                    info_msg = f"📋 **Mostrando {len(historico_pivot):,} de {total_rows:,} registros únicos** (producto + pallet)"
+                    if registros_sin_pallet > 0:
+                        info_msg += f" | ⚠️ {registros_sin_pallet:,} productos sin ID de pallet"
+                    st.info(info_msg)
                     
                     # TABLA SIN ESTILOS PESADOS (optimizada para grandes volúmenes)
                     # Usar dataframe nativo con column_config para formato
@@ -2103,10 +2112,12 @@ def main():
                     col1, col2, col3, col4 = st.columns(4)
                     
                     with col1:
-                        if fecha_cols_hist:
-                            # Sumar valores negativos de stock en el pivote
-                            total_neg_hist = abs(historico_pivot[fecha_cols_hist].select_dtypes(include=[np.number]).sum().sum())
-                            st.metric("Total Stock Negativo", f"{total_neg_hist:,.0f}")
+                        # CORREGIDO: Usar df_filtered_ultimo directo, no el pivote
+                        fecha_max_filtrada = df_filtered["fecha"].max()
+                        df_filtered_ultimo = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
+                        total_stock_ultimo = abs(df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0]["Stock"].sum())
+                        st.metric("Total Stock Negativo (Último Día)", f"{total_stock_ultimo:,.0f}",
+                                 help=f"Stock negativo total en {fecha_max_filtrada.strftime('%Y-%m-%d')}")
                     
                     with col2:
                         pallets_vista = len(historico_pivot)
