@@ -1881,21 +1881,30 @@ def main():
                 st.markdown("---")
                 
                 # CONTROLES AVANZADOS
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2, col3, col4, col5 = st.columns(5)
                 
                 with col1:
                     buscar_codigo_hist = st.text_input("🔍 Buscar código:", key="buscar_codigo_hist")
                 
                 with col2:
-                    solo_activos_hist = st.checkbox("Solo artículos activos (última fecha)", key="solo_activos_hist")
+                    company_hist = st.selectbox("Zona/Compañía:", 
+                        ["Todas"] + sorted(df_historico["CompanyId"].unique().tolist()),
+                        key="company_hist")
                 
                 with col3:
-                    almacen_hist = st.selectbox("Filtrar por almacén:", 
+                    almacen_hist = st.selectbox("Almacén:", 
                         ["Todos"] + sorted(df_historico["InventLocationId"].unique().tolist()),
                         key="almacen_hist")
                 
                 with col4:
-                    mostrar_vacios_hist = st.checkbox("Mostrar celdas vacías como 0", key="mostrar_vacios_hist")
+                    solo_activos_hist = st.checkbox("Solo activos", value=True, key="solo_activos_hist")
+                
+                with col5:
+                    max_rows_display = st.selectbox("Máx. filas:", 
+                        options=[100, 500, 1000, 5000, "Todas"],
+                        index=1,
+                        key="max_rows_hist",
+                        help="Limitar filas para mejor rendimiento")
                 
                 # FILTROS ADICIONALES
                 with st.expander("🔧 Filtros Avanzados"):
@@ -1954,6 +1963,10 @@ def main():
                     mask = df_filtered["ProductId"].astype(str).str.contains(buscar_codigo_hist, case=False, na=False)
                     df_filtered = df_filtered[mask]
                 
+                # Filtro por Zona/Compañía
+                if company_hist != "Todas":
+                    df_filtered = df_filtered[df_filtered["CompanyId"] == company_hist]
+                
                 if almacen_hist != "Todos":
                     df_filtered = df_filtered[df_filtered["InventLocationId"] == almacen_hist]
                 
@@ -1971,19 +1984,20 @@ def main():
                         (df_filtered["fecha"].dt.date <= fecha_fin_hist)
                     ]
                 
-                # CREAR TABLA PIVOTE
+                # CREAR TABLA PIVOTE (incluir CompanyId)
                 if len(df_filtered) > 0:
                     df_filtered["ID_Unico"] = (df_filtered["ProductId"].astype(str) + "_" + 
                                               df_filtered["LabelId"].astype(str))
                     
                     historico_pivot = df_filtered.pivot_table(
-                        index=["ProductId", "ProductName_es", "LabelId", "InventLocationId"],
+                        index=["CompanyId", "ProductId", "ProductName_es", "LabelId", "InventLocationId"],
                         columns="fecha",
                         values="Stock",
                         aggfunc="first"
                     ).reset_index()
                     
                     historico_pivot = historico_pivot.rename(columns={
+                        "CompanyId": "Zona",
                         "ProductId": "Codigo",
                         "ProductName_es": "Nombre",
                         "LabelId": "ID_Pallet",
@@ -1998,24 +2012,22 @@ def main():
                         ultima_fecha_hist = max(fecha_cols_hist)
                         historico_pivot = historico_pivot[historico_pivot[ultima_fecha_hist].notna() & (historico_pivot[ultima_fecha_hist] != 0)]
                     
-                    st.info(f"📋 **Mostrando {len(historico_pivot)} registros únicos** (producto + pallet) con los filtros aplicados")
+                    # Limitar filas según selección
+                    total_rows = len(historico_pivot)
+                    if max_rows_display != "Todas":
+                        historico_pivot = historico_pivot.head(max_rows_display)
                     
-                    if mostrar_vacios_hist:
-                        historico_display = historico_pivot.fillna(0)
-                    else:
-                        historico_display = historico_pivot.fillna("")
+                    st.info(f"📋 **Mostrando {len(historico_pivot):,} de {total_rows:,} registros únicos** (producto + pallet) con los filtros aplicados")
                     
-                    def colorear_historico(val):
-                        if pd.isna(val) or val == "" or val == 0:
-                            return ""
-                        elif isinstance(val, (int, float)) and val < 0:
-                            intensity = min(abs(val) / 100, 1.0)
-                            alpha = 0.3 + (intensity * 0.5)
-                            return f"background-color: rgba(255, 68, 68, {alpha}); color: white; font-weight: bold;"
-                        return ""
-                    
-                    styled_historico = historico_display.style.applymap(colorear_historico)
-                    st.dataframe(styled_historico, width='stretch', height=500)
+                    # TABLA SIN ESTILOS PESADOS (optimizada para grandes volúmenes)
+                    # Usar dataframe nativo con column_config para formato
+                    st.dataframe(
+                        historico_pivot,
+                        width='stretch',
+                        height=500,
+                        use_container_width=True,
+                        hide_index=True
+                    )
                     
                     # ESTADÍSTICAS
                     st.markdown("---")
@@ -2046,12 +2058,13 @@ def main():
                     st.markdown("### 📈 Análisis Visual de Datos Filtrados")
                     
                     if fecha_cols_hist and len(historico_pivot) > 0:
+                        # Fila 1: Evolución Total y Distribución por Zona
                         col1, col2 = st.columns(2)
                         
                         with col1:
                             evolution_data_hist = []
                             for fecha in sorted(fecha_cols_hist):
-                                columna = pd.to_numeric(historico_display[fecha], errors='coerce')
+                                columna = pd.to_numeric(historico_pivot[fecha], errors='coerce')
                                 total = columna.sum(skipna=True)
                                 if pd.notna(total) and total != 0:
                                     evolution_data_hist.append({"Fecha": fecha, "Total": abs(total)})
@@ -2062,7 +2075,7 @@ def main():
                                     evo_df_hist,
                                     x="Fecha",
                                     y="Total",
-                                    title="Evolución Total (Histórico DB)",
+                                    title="📊 Evolución Total Stock Negativo",
                                     markers=True
                                 )
                                 fig_evo_hist.update_traces(line_color="#ff4444", line_width=3)
@@ -2070,10 +2083,52 @@ def main():
                                 st.plotly_chart(fig_evo_hist, use_container_width=True)
                         
                         with col2:
+                            # Distribución por Zona/Compañía
+                            zona_data_hist = {}
+                            for zona in historico_pivot["Zona"].unique():
+                                if pd.notna(zona):
+                                    subset = historico_pivot[historico_pivot["Zona"] == zona]
+                                    total = 0
+                                    for fecha in fecha_cols_hist:
+                                        columna_numerica = pd.to_numeric(subset[fecha], errors='coerce')
+                                        total += columna_numerica.sum(skipna=True)
+                                    
+                                    if total != 0:
+                                        zona_data_hist[zona] = abs(total)
+                            
+                            if zona_data_hist:
+                                fig_zona_hist = px.pie(
+                                    values=list(zona_data_hist.values()),
+                                    names=list(zona_data_hist.keys()),
+                                    title="🏢 Distribución por Zona/Compañía"
+                                )
+                                fig_zona_hist.update_layout(height=350)
+                                st.plotly_chart(fig_zona_hist, use_container_width=True)
+                        
+                        # Fila 2: Costos por Zona y Almacenes más afectados
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Top Zonas por Costo
+                            costos_por_zona = df_filtered[df_filtered["Stock"] < 0].groupby("CompanyId")["CostStock"].sum().abs().sort_values(ascending=False).head(10)
+                            if len(costos_por_zona) > 0:
+                                fig_costos_zona = px.bar(
+                                    x=costos_por_zona.values,
+                                    y=costos_por_zona.index,
+                                    orientation='h',
+                                    title="💰 Top 10 Zonas por Costo Negativo",
+                                    labels={"x": "Costo ($)", "y": "Zona"}
+                                )
+                                fig_costos_zona.update_traces(marker_color='#ff6b6b')
+                                fig_costos_zona.update_layout(height=350)
+                                st.plotly_chart(fig_costos_zona, use_container_width=True)
+                        
+                        with col2:
+                            # Top Almacenes por Stock Negativo
                             almacen_data_hist = {}
                             for almacen in historico_pivot["Almacen"].unique():
                                 if pd.notna(almacen):
-                                    subset = historico_display[historico_display["Almacen"] == almacen]
+                                    subset = historico_pivot[historico_pivot["Almacen"] == almacen]
                                     total = 0
                                     for fecha in fecha_cols_hist:
                                         columna_numerica = pd.to_numeric(subset[fecha], errors='coerce')
@@ -2083,11 +2138,16 @@ def main():
                                         almacen_data_hist[almacen] = abs(total)
                             
                             if almacen_data_hist:
-                                fig_almacen_hist = px.pie(
-                                    values=list(almacen_data_hist.values()),
-                                    names=list(almacen_data_hist.keys()),
-                                    title="Distribución por Almacén (Histórico)"
+                                # Top 10 almacenes
+                                top_almacenes = dict(sorted(almacen_data_hist.items(), key=lambda x: x[1], reverse=True)[:10])
+                                fig_almacen_hist = px.bar(
+                                    x=list(top_almacenes.values()),
+                                    y=list(top_almacenes.keys()),
+                                    orientation='h',
+                                    title="📦 Top 10 Almacenes por Stock Negativo",
+                                    labels={"x": "Stock Negativo", "y": "Almacén"}
                                 )
+                                fig_almacen_hist.update_traces(marker_color='#4ecdc4')
                                 fig_almacen_hist.update_layout(height=350)
                                 st.plotly_chart(fig_almacen_hist, use_container_width=True)
                         
@@ -2194,12 +2254,13 @@ def main():
                     
                     # DESCARGA
                     st.markdown("---")
-                    csv_historico = historico_display.to_csv(index=False)
+                    csv_historico = historico_pivot.to_csv(index=False)
                     st.download_button(
                         label="📥 Descargar Histórico DB Filtrado (CSV)",
                         data=csv_historico,
                         file_name=f"Historico_DB_Filtrado_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                        mime="text/csv"
+                        mime="text/csv",
+                        help="Descarga datos filtrados incluyendo Zona, Código, Nombre, ID_Pallet, Almacén y evolución temporal"
                     )
                 else:
                     st.warning("⚠️ No hay datos que coincidan con los filtros aplicados.")
