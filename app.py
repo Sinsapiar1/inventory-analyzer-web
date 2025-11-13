@@ -1939,63 +1939,96 @@ def main():
                 )
                 st.plotly_chart(fig_costos_zona, use_container_width=True)
                 
-                # Tabla resumen debajo
+                # Tabla resumen debajo con cálculo correcto
                 st.markdown("#### 📋 Resumen Detallado por Zona")
+                st.caption(f"💡 Datos del último día disponible: {ultima_fecha.strftime('%d/%m/%Y')}")
                 
                 tabla_resumen = costos_resumen.copy()
                 tabla_resumen = tabla_resumen.rename(columns={
                     "CompanyId": "Zona",
                     "CostStock_Abs": "Costo Total ($)",
                     "Stock_Abs": "Unidades Negativas",
-                    "ProductId": "Productos",
-                    "InventLocationId": "Almacenes"
+                    "ProductId": "Productos Únicos",  # MÁS CLARO
+                    "InventLocationId": "Almacenes Únicos"  # MÁS CLARO
                 })
                 tabla_resumen["Costo Total ($)"] = tabla_resumen["Costo Total ($)"].apply(lambda x: f"${x:,.0f}")
                 tabla_resumen["Unidades Negativas"] = tabla_resumen["Unidades Negativas"].apply(lambda x: f"{x:,.0f}")
                 
                 st.dataframe(
-                    tabla_resumen[["Zona", "Costo Total ($)", "Unidades Negativas", "Productos", "Almacenes"]],
+                    tabla_resumen[["Zona", "Costo Total ($)", "Unidades Negativas", "Productos Únicos", "Almacenes Únicos"]],
                     use_container_width=True,
                     height=250,
                     hide_index=True
                 )
+                st.caption("ℹ️ 'Productos Únicos' = Cantidad de códigos de producto diferentes con stock negativo en esa zona | 'Almacenes Únicos' = Cantidad de almacenes diferentes en esa zona")
                 
                 st.markdown("---")
                 
-                # PANEL DE FILTROS PROFESIONAL TIPO POWER BI
+                # PANEL DE FILTROS MEJORADO - MÁS INTUITIVO Y PROFESIONAL
                 st.markdown("### 🎯 Panel de Filtros Interactivos")
                 
-                # Contenedor con estilo profesional
+                # Contenedor visual profesional
+                st.markdown("""
+                <style>
+                .stMultiSelect [data-baseweb="select"] {
+                    background-color: #f8f9fa;
+                }
+                .stMultiSelect [data-baseweb="tag"] {
+                    background-color: #667eea;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                # Contenedor con borde
                 with st.container():
                     st.markdown("""
-                    <style>
-                    .filter-container {
-                        background: #f8f9fa;
-                        padding: 20px;
-                        border-radius: 10px;
-                        border: 1px solid #e0e0e0;
-                    }
-                    </style>
+                    <div style="background: linear-gradient(to right, #f8f9fa, #e9ecef); 
+                                padding: 20px; border-radius: 12px; border: 2px solid #dee2e6;
+                                box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    </div>
                     """, unsafe_allow_html=True)
                     
-                    # FILA 1: Filtros principales relacionados
-                    col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+                    # SECCIÓN 1: Filtros geográficos con botones de control
+                    st.markdown("#### 🌍 Filtros Geográficos (Relacionados)")
+                    
+                    col1, col2 = st.columns(2)
                     
                     with col1:
                         st.markdown("**🏢 Zonas/Compañías**")
                         todas_zonas = sorted(df_historico["CompanyId"].unique().tolist())
+                        
+                        # Botones de control rápido
+                        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
+                        with col_btn1:
+                            if st.button("✅ Todas", key="btn_todas_zonas", use_container_width=True):
+                                st.session_state['zonas_seleccionadas_temp'] = todas_zonas
+                        with col_btn2:
+                            if st.button("❌ Ninguna", key="btn_ninguna_zona", use_container_width=True):
+                                st.session_state['zonas_seleccionadas_temp'] = []
+                        
+                        # Multiselect de zonas
+                        default_zonas = st.session_state.get('zonas_seleccionadas_temp', todas_zonas)
                         zonas_seleccionadas = st.multiselect(
                             "Selecciona una o más zonas:",
                             options=todas_zonas,
-                            default=todas_zonas,  # Por defecto, todas seleccionadas
+                            default=default_zonas,
                             key="zonas_multiselect",
-                            help="Filtro relacionado: Los almacenes se ajustarán según las zonas seleccionadas",
+                            help="💡 Los almacenes se filtran automáticamente según las zonas seleccionadas",
                             label_visibility="collapsed"
                         )
-                        st.caption(f"📊 {len(zonas_seleccionadas)}/{len(todas_zonas)} zonas seleccionadas")
+                        st.session_state['zonas_seleccionadas_temp'] = zonas_seleccionadas
+                        
+                        # Indicador visual
+                        if len(zonas_seleccionadas) == len(todas_zonas):
+                            st.success(f"✅ Todas las zonas ({len(todas_zonas)})")
+                        elif len(zonas_seleccionadas) == 0:
+                            st.warning("⚠️ Ninguna zona seleccionada")
+                        else:
+                            st.info(f"📊 {len(zonas_seleccionadas)}/{len(todas_zonas)} zonas seleccionadas")
                     
                     with col2:
-                        st.markdown("**🏭 Almacenes**")
+                        st.markdown("**🏭 Almacenes (Filtrado Dinámico)**")
+                        
                         # FILTRO RELACIONADO: Solo mostrar almacenes de las zonas seleccionadas
                         if zonas_seleccionadas:
                             almacenes_disponibles = sorted(
@@ -2004,41 +2037,72 @@ def main():
                         else:
                             almacenes_disponibles = []
                         
+                        # Botones de control rápido
+                        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
+                        with col_btn1:
+                            if st.button("✅ Todos", key="btn_todos_alm", use_container_width=True, disabled=len(almacenes_disponibles)==0):
+                                st.session_state['almacenes_seleccionados_temp'] = almacenes_disponibles
+                        with col_btn2:
+                            if st.button("❌ Ninguno", key="btn_ningun_alm", use_container_width=True, disabled=len(almacenes_disponibles)==0):
+                                st.session_state['almacenes_seleccionados_temp'] = []
+                        
+                        # Multiselect de almacenes
+                        default_almacenes = st.session_state.get('almacenes_seleccionados_temp', almacenes_disponibles)
+                        # Filtrar default_almacenes para solo incluir los que están en almacenes_disponibles
+                        default_almacenes = [a for a in default_almacenes if a in almacenes_disponibles]
+                        
                         almacenes_seleccionados = st.multiselect(
                             "Selecciona uno o más almacenes:",
                             options=almacenes_disponibles,
-                            default=almacenes_disponibles,  # Por defecto, todos
+                            default=default_almacenes,
                             key="almacenes_multiselect",
-                            help="Se muestran solo almacenes de las zonas seleccionadas",
+                            help="💡 Solo se muestran almacenes de las zonas seleccionadas arriba",
                             label_visibility="collapsed",
                             disabled=len(zonas_seleccionadas) == 0
                         )
-                        st.caption(f"🏢 {len(almacenes_seleccionados)}/{len(almacenes_disponibles)} almacenes")
+                        st.session_state['almacenes_seleccionados_temp'] = almacenes_seleccionados
+                        
+                        # Indicador visual
+                        if len(almacenes_disponibles) == 0:
+                            st.error("❌ Selecciona al menos una zona primero")
+                        elif len(almacenes_seleccionados) == len(almacenes_disponibles):
+                            st.success(f"✅ Todos los almacenes ({len(almacenes_disponibles)})")
+                        elif len(almacenes_seleccionados) == 0:
+                            st.warning("⚠️ Ningún almacén seleccionado")
+                        else:
+                            st.info(f"🏢 {len(almacenes_seleccionados)}/{len(almacenes_disponibles)} almacenes")
                     
-                    with col3:
-                        st.markdown("**🔍 Buscar Producto**")
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    # SECCIÓN 2: Otros filtros
+                    st.markdown("#### 🔍 Filtros Adicionales")
+                    col1, col2, col3 = st.columns([2, 1, 1])
+                    
+                    with col1:
                         buscar_codigo_hist = st.text_input(
-                            "Código o nombre:",
+                            "🔍 Buscar por código o nombre de producto:",
                             key="buscar_codigo_hist",
-                            placeholder="Ej: 67312",
-                            label_visibility="collapsed"
+                            placeholder="Ejemplo: 67312, PORTAPUNTAL, EUROPROP...",
+                            help="Búsqueda flexible por código o nombre"
                         )
                         if buscar_codigo_hist:
-                            st.caption(f"🔎 Buscando: '{buscar_codigo_hist}'")
-                        else:
-                            st.caption("📝 Ingresa código para buscar")
+                            st.caption(f"🔎 Filtrando por: **'{buscar_codigo_hist}'**")
                     
-                    with col4:
-                        st.markdown("**📋 Vista**")
+                    with col2:
                         max_rows_display = st.selectbox(
-                            "Máx. filas:",
+                            "📋 Máximo de filas a mostrar:",
                             options=[100, 500, 1000, 5000, "Todas"],
                             index=1,
                             key="max_rows_hist",
-                            help="Limitar filas para mejor rendimiento",
-                            label_visibility="collapsed"
+                            help="Limitar filas mejora el rendimiento con grandes volúmenes"
                         )
-                        st.caption("🚀 Rendimiento")
+                    
+                    with col3:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("🔄 Restablecer Filtros", key="btn_reset_filtros", use_container_width=True):
+                            st.session_state['zonas_seleccionadas_temp'] = todas_zonas
+                            st.session_state['almacenes_seleccionados_temp'] = almacenes_disponibles
+                            st.rerun()
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
