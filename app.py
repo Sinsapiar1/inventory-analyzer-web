@@ -1857,6 +1857,27 @@ def main():
             else:
                 st.success(f"✅ Base de datos cargada exitosamente: {len(df_historico):,} registros")
                 
+                # DEBUG: Mostrar información de la estructura de datos
+                with st.expander("🔍 Debug: Estructura de Datos (para verificación)"):
+                    st.write("**Ejemplo de datos del almacén 612D:**")
+                    ejemplo_612d = df_historico[df_historico["InventLocationId"] == "612D"].sort_values("fecha", ascending=False).head(20)
+                    if len(ejemplo_612d) > 0:
+                        st.dataframe(ejemplo_612d[["fecha", "ProductId", "ProductName_es", "LabelId", "Stock", "CostStock"]], use_container_width=True)
+                        
+                        st.write("**Última fecha disponible:**", df_historico["fecha"].max())
+                        st.write("**Total de fechas únicas:**", df_historico["fecha"].nunique())
+                        
+                        # Analizar el 612D específicamente
+                        ultima_fecha = df_historico["fecha"].max()
+                        df_612d_ultimo = df_historico[(df_historico["InventLocationId"] == "612D") & 
+                                                       (df_historico["fecha"] == ultima_fecha) & 
+                                                       (df_historico["Stock"] < 0)]
+                        costo_612d_ultimo = abs(df_612d_ultimo["CostStock"].sum())
+                        st.write(f"**Costo 612D (último día):** ${costo_612d_ultimo:,.2f}")
+                        st.write(f"**Registros en 612D (último día, negativos):** {len(df_612d_ultimo)}")
+                    else:
+                        st.warning("No se encontraron datos para almacén 612D")
+                
                 # MÉTRICAS PRINCIPALES DE COSTOS
                 col1, col2, col3, col4 = st.columns(4)
                 
