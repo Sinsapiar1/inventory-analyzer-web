@@ -1861,6 +1861,40 @@ def main():
                 ultima_fecha = df_historico["fecha"].max()
                 df_ultimo_dia = df_historico[df_historico["fecha"] == ultima_fecha]
                 
+                # DEBUG: Verificar unidades del 612D
+                with st.expander("🔍 Debug: Verificar Unidades 612D", expanded=True):
+                    st.write("### Análisis de Stock Negativo - Almacén 612D")
+                    
+                    # Del df_historico original (último día)
+                    df_612d_ultimo = df_ultimo_dia[df_ultimo_dia["InventLocationId"] == "612D"]
+                    df_612d_negativos = df_612d_ultimo[df_612d_ultimo["Stock"] < 0]
+                    
+                    total_stock_original = abs(df_612d_negativos["Stock"].sum())
+                    registros_originales = len(df_612d_negativos)
+                    
+                    st.write(f"**1. Del DataFrame Original (df_historico, último día):**")
+                    st.write(f"   - Total Stock Negativo: **{total_stock_original:,.0f}** unidades")
+                    st.write(f"   - Registros: {registros_originales}")
+                    
+                    # Verificar productos sin LabelId
+                    sin_label = df_612d_negativos[df_612d_negativos["LabelId"].isna() | (df_612d_negativos["LabelId"] == "")]
+                    st.write(f"   - Registros SIN LabelId: **{len(sin_label)}**")
+                    if len(sin_label) > 0:
+                        stock_sin_label = abs(sin_label["Stock"].sum())
+                        st.write(f"   - Stock de productos SIN LabelId: **{stock_sin_label:,.0f}** unidades")
+                        st.write(f"   - % del total: **{(stock_sin_label/total_stock_original*100):.1f}%**")
+                        st.dataframe(sin_label[["ProductId", "ProductName_es", "LabelId", "Stock"]], use_container_width=True, height=200)
+                    
+                    # Verificar duplicados
+                    st.write(f"\n**2. Verificación de Duplicados:**")
+                    duplicados = df_612d_negativos.groupby(["ProductId", "LabelId"]).size()
+                    duplicados = duplicados[duplicados > 1]
+                    if len(duplicados) > 0:
+                        st.warning(f"⚠️ Hay {len(duplicados)} combinaciones Producto-Pallet duplicadas!")
+                        st.dataframe(duplicados, use_container_width=True)
+                    else:
+                        st.success("✅ No hay duplicados de Producto-Pallet")
+                
                 # MÉTRICAS PRINCIPALES DE COSTOS (SOLO ÚLTIMO DÍA)
                 st.info(f"📅 **Mostrando datos del último día disponible:** {ultima_fecha.strftime('%Y-%m-%d')}")
                 
