@@ -1871,12 +1871,34 @@ def main():
                     st.metric("Días con Datos", fechas_unicas, help=f"Desde {fecha_min} hasta {fecha_max}")
                 
                 with col3:
-                    costo_total_negativo = df_historico[df_historico["Stock"] < 0]["CostStock"].sum()
-                    st.metric("Costo Total Negativo", f"${costo_total_negativo:,.0f}", delta=f"{costo_total_negativo:,.0f}", delta_color="inverse")
+                    # CostStock ya viene negativo, tomamos valor absoluto para mostrar el impacto
+                    costo_total_negativo = abs(df_historico[df_historico["Stock"] < 0]["CostStock"].sum())
+                    st.metric("Costo Total Negativo", f"${costo_total_negativo:,.0f}")
                 
                 with col4:
                     productos_unicos = df_historico["ProductId"].nunique()
                     st.metric("Productos Únicos", f"{productos_unicos:,}")
+                
+                # RESUMEN DE COSTOS POR ZONA
+                st.markdown("---")
+                st.markdown("### 💰 Resumen de Costos por Zona")
+                
+                # Calcular costos por zona de forma más clara
+                costos_resumen = df_historico[df_historico["Stock"] < 0].groupby("CompanyId").agg({
+                    "CostStock": "sum",
+                    "ProductId": "nunique",
+                    "InventLocationId": "nunique"
+                }).sort_values("CostStock", ascending=True)  # Más negativo primero
+                
+                costos_resumen["CostStock_Abs"] = costos_resumen["CostStock"].abs()
+                costos_resumen = costos_resumen.sort_values("CostStock_Abs", ascending=False)
+                
+                # Mostrar tabla resumen
+                costos_display = costos_resumen[["CostStock_Abs", "ProductId", "InventLocationId"]].copy()
+                costos_display.columns = ["Costo Total ($)", "Productos", "Almacenes"]
+                costos_display["Costo Total ($)"] = costos_display["Costo Total ($)"].apply(lambda x: f"${x:,.0f}")
+                
+                st.dataframe(costos_display, use_container_width=True, height=200)
                 
                 st.markdown("---")
                 
@@ -2037,21 +2059,28 @@ def main():
                     
                     with col1:
                         if fecha_cols_hist:
-                            total_neg_hist = historico_display[fecha_cols_hist].select_dtypes(include=[np.number]).sum().sum()
-                            st.metric("Total Negativo", f"{total_neg_hist:,.0f}")
+                            # Sumar valores negativos de stock en el pivote
+                            total_neg_hist = abs(historico_pivot[fecha_cols_hist].select_dtypes(include=[np.number]).sum().sum())
+                            st.metric("Total Stock Negativo", f"{total_neg_hist:,.0f}")
                     
                     with col2:
-                        st.metric("Pallets en Vista", len(historico_pivot))
+                        pallets_vista = len(historico_pivot)
+                        productos_vista = historico_pivot["Codigo"].nunique()
+                        st.metric("Pallets en Vista", f"{pallets_vista:,}", help=f"{productos_vista:,} productos únicos")
                     
                     with col3:
                         if fecha_cols_hist:
-                            promedio_neg_hist = historico_display[fecha_cols_hist].select_dtypes(include=[np.number]).mean().mean()
+                            # Promedio de valores negativos
+                            valores_negativos = historico_pivot[fecha_cols_hist].select_dtypes(include=[np.number])
+                            valores_negativos = valores_negativos[valores_negativos < 0]
+                            promedio_neg_hist = abs(valores_negativos.mean().mean())
                             promedio_display_hist = f"{promedio_neg_hist:.1f}" if pd.notna(promedio_neg_hist) else "N/A"
-                            st.metric("Promedio por Celda", promedio_display_hist)
+                            st.metric("Promedio Negativo", promedio_display_hist)
                     
                     with col4:
-                        costo_filtrado = df_filtered[df_filtered["Stock"] < 0]["CostStock"].sum()
-                        st.metric("Costo Filtrado", f"${costo_filtrado:,.0f}")
+                        # Costo total de registros filtrados (valor absoluto)
+                        costo_filtrado = abs(df_filtered[df_filtered["Stock"] < 0]["CostStock"].sum())
+                        st.metric("Costo Filtrado", f"${costo_filtrado:,.0f}", help="Costo total del inventario negativo filtrado")
                     
                     # VISUALIZACIONES
                     st.markdown("---")
@@ -2109,8 +2138,9 @@ def main():
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            # Top Zonas por Costo
-                            costos_por_zona = df_filtered[df_filtered["Stock"] < 0].groupby("CompanyId")["CostStock"].sum().abs().sort_values(ascending=False).head(10)
+                            # Top Zonas por Costo (valor absoluto para mostrar impacto)
+                            costos_por_zona = df_filtered[df_filtered["Stock"] < 0].groupby("CompanyId")["CostStock"].sum()
+                            costos_por_zona = costos_por_zona.abs().sort_values(ascending=False).head(10)
                             if len(costos_por_zona) > 0:
                                 fig_costos_zona = px.bar(
                                     x=costos_por_zona.values,
