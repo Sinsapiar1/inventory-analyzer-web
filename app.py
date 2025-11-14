@@ -1038,6 +1038,7 @@ def main():
     modo = st.sidebar.radio(
         "Selecciona el modo:",
         ["📥 Preprocesar Datos ERP", "📊 Analizar Inventarios", "🗄️ Histórico DB"],
+        index=2,  # Por defecto: Histórico DB
         help="Preprocesar: Transforma datos crudos del ERP | Analizar: Procesa reportes ya formateados | Histórico DB: Análisis desde base de datos SQLite"
     )
 
