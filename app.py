@@ -2085,87 +2085,15 @@ def main():
                             help="Limitar filas mejora el rendimiento"
                         )
                     
-                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.markdown("---")
                     
-                    # ========================================
-                    # PANEL DE FILTROS AVANZADOS - DISEÑO PROFESIONAL
-                    # ========================================
+                    # 🎛️ FILTROS AVANZADOS - DISEÑO LIMPIO Y RESPONSIVO
+                    st.markdown("### 🎛️ Filtros Avanzados")
+                    st.caption("⭐ Herramienta clave | Refina tu análisis con filtros personalizados")
                     
-                    # Banner de Título con Gradiente
-                    st.markdown("""
-                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                                padding: 15px 20px; 
-                                border-radius: 10px 10px 0 0; 
-                                margin-top: 20px;
-                                box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                        <div style="display: flex; align-items: center; justify-content: space-between;">
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <span style="font-size: 24px;">🎛️</span>
-                                <h3 style="color: white; margin: 0; font-weight: 600;">Filtros Avanzados</h3>
-                            </div>
-                            <span style="background: rgba(255,255,255,0.2); 
-                                         color: white; 
-                                         padding: 5px 15px; 
-                                         border-radius: 20px; 
-                                         font-size: 12px;
-                                         font-weight: 600;">
-                                HERRAMIENTA CLAVE 🔑
-                            </span>
-                        </div>
-                        <p style="color: rgba(255,255,255,0.9); margin: 5px 0 0 34px; font-size: 13px;">
-                            Refina tu análisis con filtros personalizados para obtener insights precisos
-                        </p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Contenedor con borde y fondo
-                    st.markdown("""
-                    <div style="background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
-                                padding: 25px; 
-                                border-radius: 0 0 10px 10px;
-                                border: 2px solid #667eea;
-                                border-top: none;
-                                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-                                margin-bottom: 20px;">
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Usar un expander pero con título más llamativo
-                    with st.expander("👉 **CLICK AQUÍ PARA ABRIR FILTROS AVANZADOS** 👈", expanded=False):
-                        st.markdown("""
-                        <style>
-                        div[data-testid="stExpander"] {
-                            background: linear-gradient(135deg, #ffffff 0%, #f0f2f6 100%);
-                            border: 2px solid #667eea;
-                            border-radius: 10px;
-                            margin-top: -45px;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                        }
-                        div[data-testid="stExpander"] > div:first-child {
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                            color: white;
-                            font-weight: 600;
-                            padding: 12px;
-                            border-radius: 8px;
-                        }
-                        </style>
-                        """, unsafe_allow_html=True)
-                        
-                        st.markdown("---")
-                        
-                        # FILA 1: Opciones rápidas con badges
-                        st.markdown("""
-                        <div style="background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%); 
-                                    padding: 15px; 
-                                    border-radius: 8px; 
-                                    margin-bottom: 20px;
-                                    border-left: 4px solid #00b894;">
-                            <h4 style="margin: 0 0 10px 0; color: #2d3436;">
-                                🎚️ Opciones de Filtrado Rápido
-                            </h4>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
+                    with st.expander("🔍 **Opciones de Filtrado Avanzado**", expanded=False):
+                        # Opciones Rápidas
+                        st.markdown("#### 🎚️ Opciones Rápidas")
                         col1, col2 = st.columns(2)
                         with col1:
                             solo_negativos_hist = st.checkbox(
@@ -2182,83 +2110,47 @@ def main():
                                 help="Mostrar solo productos con movimiento en la última fecha"
                             )
                         
-                        st.markdown("<br>", unsafe_allow_html=True)
+                        st.markdown("---")
                         
-                        # FILA 2: Filtros por código con badges
-                        st.markdown("""
-                        <div style="background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%); 
-                                    padding: 15px; 
-                                    border-radius: 8px; 
-                                    margin-bottom: 20px;
-                                    border-left: 4px solid #fdcb6e;">
-                            <h4 style="margin: 0 0 10px 0; color: #2d3436;">
-                                🏷️ Filtros por Código de Producto
-                            </h4>
-                            <p style="margin: 0; font-size: 13px; color: #636e72;">
-                                💡 <b>Tip:</b> Separa múltiples códigos con comas (ej: 67312, 87947, 87538)
-                            </p>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        # Filtros por Código
+                        st.markdown("#### 🏷️ Filtros por Código de Producto")
+                        st.caption("💡 Tip: Separa múltiples códigos con comas (ej: 67312, 87947, 87538)")
                         
                         col1, col2 = st.columns(2)
                         with col1:
                             codigos_excluir_hist = st.text_area(
-                                "❌ **Excluir estos códigos:**",
+                                "❌ Excluir códigos:",
                                 key="codigos_excluir_hist",
-                                height=100,
-                                placeholder="Ejemplo: 67312, 87947, 87538\n\nSepara con comas...",
-                                help="Los productos con estos códigos NO aparecerán en el análisis"
+                                height=80,
+                                placeholder="67312, 87947, 87538...",
+                                help="Los productos con estos códigos NO aparecerán"
                             )
                             if codigos_excluir_hist.strip():
                                 cantidad_excl = len([c.strip() for c in codigos_excluir_hist.split(",") if c.strip()])
-                                st.markdown(f"""
-                                <div style="background: #ff7675; color: white; padding: 5px 10px; 
-                                            border-radius: 5px; font-size: 12px; display: inline-block;">
-                                    🚫 {cantidad_excl} código(s) excluido(s)
-                                </div>
-                                """, unsafe_allow_html=True)
+                                st.error(f"🚫 {cantidad_excl} código(s) excluido(s)")
                         
                         with col2:
                             codigos_incluir_hist = st.text_area(
-                                "✅ **Solo incluir estos códigos:**",
+                                "✅ Solo incluir códigos:",
                                 key="codigos_incluir_hist",
-                                height=100,
-                                placeholder="Ejemplo: 67057, 67498, 67499\n\nSepara con comas...",
-                                help="SOLO estos productos aparecerán (anula el filtro de exclusión)"
+                                height=80,
+                                placeholder="67057, 67498, 67499...",
+                                help="SOLO estos productos aparecerán (anula exclusión)"
                             )
                             if codigos_incluir_hist.strip():
                                 cantidad_incl = len([c.strip() for c in codigos_incluir_hist.split(",") if c.strip()])
-                                st.markdown(f"""
-                                <div style="background: #00b894; color: white; padding: 5px 10px; 
-                                            border-radius: 5px; font-size: 12px; display: inline-block;">
-                                    ✔️ {cantidad_incl} código(s) incluido(s)
-                                </div>
-                                """, unsafe_allow_html=True)
+                                st.success(f"✔️ {cantidad_incl} código(s) incluido(s)")
                         
-                        st.markdown("<br>", unsafe_allow_html=True)
+                        st.markdown("---")
                         
-                        # FILA 3: Rango de fechas con badges
-                        st.markdown("""
-                        <div style="background: linear-gradient(135deg, #a29bfe 0%, #6c5ce7 100%); 
-                                    padding: 15px; 
-                                    border-radius: 8px; 
-                                    margin-bottom: 20px;
-                                    border-left: 4px solid #6c5ce7;">
-                            <h4 style="margin: 0 0 10px 0; color: white;">
-                                📅 Filtro de Rango Temporal
-                            </h4>
-                            <p style="margin: 0; font-size: 13px; color: rgba(255,255,255,0.9);">
-                                🕐 Analiza un período específico de tiempo
-                            </p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
+                        # Rango de Fechas
+                        st.markdown("#### 📅 Rango Temporal")
                         fechas_disponibles = sorted(df_historico["fecha"].unique())
                         if len(fechas_disponibles) > 0:
                             col1, col2, col3 = st.columns([2, 2, 1])
                             with col1:
                                 fecha_inicio_hist = st.date_input(
-                                    "📆 Desde:",
+                                    "Desde:",
                                     value=fechas_disponibles[0],
                                     min_value=fechas_disponibles[0],
                                     max_value=fechas_disponibles[-1],
@@ -2266,7 +2158,7 @@ def main():
                                 )
                             with col2:
                                 fecha_fin_hist = st.date_input(
-                                    "📆 Hasta:",
+                                    "Hasta:",
                                     value=fechas_disponibles[-1],
                                     min_value=fechas_disponibles[0],
                                     max_value=fechas_disponibles[-1],
@@ -2274,18 +2166,9 @@ def main():
                                 )
                             with col3:
                                 dias_seleccionados = (pd.Timestamp(fecha_fin_hist) - pd.Timestamp(fecha_inicio_hist)).days + 1
-                                st.markdown("<br>", unsafe_allow_html=True)
-                                st.markdown(f"""
-                                <div style="background: #6c5ce7; color: white; padding: 10px; 
-                                            border-radius: 8px; text-align: center; margin-top: 8px;">
-                                    <div style="font-size: 24px; font-weight: bold;">{dias_seleccionados}</div>
-                                    <div style="font-size: 11px;">días</div>
-                                </div>
-                                """, unsafe_allow_html=True)
+                                st.metric("Días", dias_seleccionados)
                         
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        
-                        # Resumen de filtros activos
+                        # Resumen
                         filtros_activos = []
                         if solo_negativos_hist:
                             filtros_activos.append("🔴 Stock Negativo")
@@ -2297,31 +2180,9 @@ def main():
                             filtros_activos.append(f"✅ {len([c for c in codigos_incluir_hist.split(',') if c.strip()])} incluidos")
                         
                         if filtros_activos:
-                            st.markdown("""
-                            <div style="background: linear-gradient(135deg, #00b894 0%, #00cec9 100%); 
-                                        padding: 15px; 
-                                        border-radius: 8px;
-                                        border: 2px solid #00b894;">
-                                <h4 style="margin: 0 0 10px 0; color: white;">
-                                    ✨ Filtros Activos
-                                </h4>
-                            """, unsafe_allow_html=True)
-                            
-                            badges_html = " ".join([
-                                f'<span style="background: white; color: #00b894; padding: 5px 12px; '
-                                f'border-radius: 15px; font-size: 12px; font-weight: 600; '
-                                f'margin-right: 8px; display: inline-block; margin-bottom: 5px;">{filtro}</span>'
-                                for filtro in filtros_activos
-                            ])
-                            
-                            st.markdown(f"""
-                                <div style="margin-top: 10px;">
-                                    {badges_html}
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        else:
-                            st.info("ℹ️ No hay filtros avanzados activos. Configura arriba para refinar tu análisis.")
+                            st.markdown("---")
+                            st.markdown("#### ✨ Filtros Activos")
+                            st.info(" • ".join(filtros_activos))
                 
                 # APLICAR FILTROS RELACIONADOS
                 df_filtered = df_historico.copy()
@@ -2612,16 +2473,36 @@ def main():
                         cols_order = ["_Es_Critico"] + [c for c in historico_pivot_display.columns if c != "_Es_Critico"]
                         historico_pivot_display = historico_pivot_display[cols_order]
                     
-                    # FUNCIÓN PARA APLICAR ESTILO A CELDAS VACÍAS
-                    def highlight_empty_cells(val):
-                        """Aplica color de fondo a celdas vacías (None, NaN, pd.NA)"""
+                    # FUNCIÓN PARA FORMATO CONDICIONAL POR CELDA
+                    def color_negativo_celda(val):
+                        """
+                        Aplica color según gravedad del valor negativo:
+                        - Vacío: color personalizado
+                        - Verde: poco negativo (0 a -10)
+                        - Amarillo: moderado (-10 a -50)
+                        - Naranja: grave (-50 a -100)
+                        - Rojo: crítico (< -100)
+                        """
                         if pd.isna(val):
                             return f'background-color: {color_celdas_none}'
-                        return ''
+                        
+                        if val >= 0:
+                            return ''  # Sin color para positivos
+                        
+                        val_abs = abs(val)
+                        
+                        if val_abs <= 10:
+                            return 'background-color: #d4edda; color: #155724; font-weight: bold'  # Verde claro
+                        elif val_abs <= 50:
+                            return 'background-color: #fff3cd; color: #856404; font-weight: bold'  # Amarillo
+                        elif val_abs <= 100:
+                            return 'background-color: #ffe5b4; color: #cc5500; font-weight: bold'  # Naranja claro
+                        else:
+                            return 'background-color: #f8d7da; color: #721c24; font-weight: bold'  # Rojo claro
                     
-                    # Aplicar estilos solo a columnas de fechas
+                    # Aplicar formato condicional a columnas de fechas
                     styled_pivot = historico_pivot_display.style.applymap(
-                        highlight_empty_cells,
+                        color_negativo_celda,
                         subset=fecha_cols_str
                     )
                     
