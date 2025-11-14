@@ -1015,7 +1015,8 @@ def load_historico_data(db_path):
         
         # Convertir tipos de datos
         df['Stock'] = pd.to_numeric(df['Stock'], errors='coerce').fillna(0)
-        df['CostStock'] = pd.to_numeric(df['CostStock'], errors='coerce').fillna(0)
+        # NO rellenar CostStock con 0, mantener NaN para detectar problemas
+        df['CostStock'] = pd.to_numeric(df['CostStock'], errors='coerce')
         
         return df, True, None
         
@@ -1884,10 +1885,21 @@ def main():
                     st.metric("Días en Histórico", fechas_unicas, help=f"Desde {fecha_min} hasta {fecha_max}")
                 
                 with col3:
-                    # CORREGIDO: Solo último día
-                    costo_total_ultimo_dia = abs(df_ultimo_dia[df_ultimo_dia["Stock"] < 0]["CostStock"].sum())
+                    # CORREGIDO: Solo último día, skip NaN
+                    df_negativos_ultimo = df_ultimo_dia[df_ultimo_dia["Stock"] < 0].copy()
+                    # Filtrar solo registros con CostStock válido (no NaN)
+                    df_negativos_con_costo = df_negativos_ultimo[df_negativos_ultimo["CostStock"].notna()]
+                    costo_total_ultimo_dia = abs(df_negativos_con_costo["CostStock"].sum())
+                    
+                    # Debug: contar registros sin costo
+                    registros_sin_costo = len(df_negativos_ultimo) - len(df_negativos_con_costo)
+                    
+                    help_text = f"Costo del inventario negativo en {ultima_fecha.strftime('%Y-%m-%d')}"
+                    if registros_sin_costo > 0:
+                        help_text += f" | ⚠️ {registros_sin_costo:,} registros sin CostStock válido"
+                    
                     st.metric("Costo Total Negativo", f"${costo_total_ultimo_dia:,.0f}",
-                             help=f"Costo del inventario negativo en {ultima_fecha.strftime('%Y-%m-%d')}")
+                             help=help_text)
                 
                 with col4:
                     productos_ultimo_dia = df_ultimo_dia["ProductId"].nunique()
@@ -2558,25 +2570,19 @@ def main():
                                 st.plotly_chart(fig_evo_hist, use_container_width=True)
                         
                         with col2:
-                            # Distribución por Zona/Compañía
-                            zona_data_hist = {}
-                            for zona in historico_pivot_completo["Zona"].unique():
-                                if pd.notna(zona):
-                                    subset = historico_pivot_completo[historico_pivot_completo["Zona"] == zona]
-                                    total = 0
-                                    for fecha_str in fecha_cols_str:
-                                        if fecha_str in subset.columns:
-                                            columna_numerica = pd.to_numeric(subset[fecha_str], errors='coerce')
-                                            total += columna_numerica.sum(skipna=True)
-                                    
-                                    if total != 0:
-                                        zona_data_hist[zona] = abs(total)
+                            # Distribución por Zona/Compañía (SOLO ÚLTIMO DÍA)
+                            # CORREGIDO: Usar df_filtered_ultimo en lugar de sumar todas las fechas
+                            fecha_max_filtrada = df_filtered["fecha"].max()
+                            df_filtered_ultimo_dist = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
                             
-                            if zona_data_hist:
+                            zona_data_hist = df_filtered_ultimo_dist[df_filtered_ultimo_dist["Stock"] < 0].groupby("CompanyId")["Stock"].sum().abs()
+                            zona_data_hist = zona_data_hist[zona_data_hist > 0]  # Solo positivos
+                            
+                            if len(zona_data_hist) > 0:
                                 fig_zona_hist = px.pie(
-                                    values=list(zona_data_hist.values()),
-                                    names=list(zona_data_hist.keys()),
-                                    title="🏢 Distribución por Zona/Compañía"
+                                    values=zona_data_hist.values,
+                                    names=zona_data_hist.index,
+                                    title=f"🏢 Distribución por Zona (Unidades - {fecha_max_filtrada.strftime('%Y-%m-%d')})"
                                 )
                                 fig_zona_hist.update_layout(height=350)
                                 st.plotly_chart(fig_zona_hist, use_container_width=True)
