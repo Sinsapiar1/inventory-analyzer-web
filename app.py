@@ -2556,20 +2556,15 @@ def main():
                     fecha_max_filtrada = df_filtered["fecha"].max()
                     df_filtered_ultimo = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
                     
-                    # Stock negativo (solo < 0)
-                    total_stock_ultimo = abs(df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0]["Stock"].sum())
-                    
                     # Costo: Ya viene filtrado por CostStock < 0 del filtro maestro
                     costo_filtrado = abs(df_filtered_ultimo["CostStock"].sum(skipna=True))
                     
-                    # Contar del DATAFRAME ORIGINAL (no del pivot filtrado)
-                    # Para coincidir con los datos reales del último día
-                    pallets_vista = len(df_filtered_ultimo)  # Total de registros del último día
-                    productos_vista = df_filtered_ultimo["ProductId"].nunique()  # Productos únicos del último día
+                    # Contar almacenes y zonas
+                    productos_vista = df_filtered_ultimo["ProductId"].nunique()
                     almacenes_vista = df_filtered_ultimo["InventLocationId"].nunique()
                     zonas_vista = df_filtered_ultimo["CompanyId"].nunique()
                     
-                    # Métricas principales en tarjetas simples
+                    # Métricas en tarjetas simples (solo las confiables)
                     col1, col2, col3, col4 = st.columns(4)
                     
                     with col1:
@@ -2580,45 +2575,16 @@ def main():
                         )
                     
                     with col2:
-                        st.metric(
-                            "📦 Unidades Negativas", 
-                            f"{total_stock_ultimo:,.0f}",
-                            help=f"Total de unidades en negativo al {fecha_max_filtrada.strftime('%d/%m/%Y')}"
-                        )
-                    
-                    with col3:
-                        st.metric(
-                            "🏢 Almacenes", 
-                            f"{almacenes_vista}",
-                            help=f"Almacenes incluidos en la vista actual ({zonas_vista} zonas)"
-                        )
-                    
-                    with col4:
-                        st.metric(
-                            "🔢 Productos", 
-                            f"{productos_vista:,}",
-                            help="Productos únicos con stock negativo"
-                        )
-                    
-                    # Métricas secundarias
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric("📋 Registros (Pallets)", f"{pallets_vista:,}", 
-                                 help="Registros únicos en la tabla (producto + pallet)")
-                    
-                    with col2:
                         costo_promedio_producto = costo_filtrado / productos_vista if productos_vista > 0 else 0
                         st.metric("💵 Costo Promedio", f"${costo_promedio_producto:,.0f}",
                                  help="Costo promedio por producto")
                     
                     with col3:
-                        if fecha_cols_hist and total_stock_ultimo > 0:
-                            promedio_unidades = total_stock_ultimo / productos_vista if productos_vista > 0 else 0
-                            st.metric("📊 Unid. Prom/Producto", f"{promedio_unidades:.1f}",
-                                     help="Promedio de unidades negativas por producto")
-                        else:
-                            st.metric("📊 Unid. Prom/Producto", "N/A")
+                        st.metric(
+                            "🏢 Almacenes", 
+                            f"{almacenes_vista}",
+                            help=f"Almacenes incluidos en la vista actual"
+                        )
                     
                     with col4:
                         st.metric("🎯 Zonas Activas", f"{zonas_vista}",
