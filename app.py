@@ -1886,18 +1886,17 @@ def main():
                     st.metric("Días en Histórico", fechas_unicas, help=f"Desde {fecha_min} hasta {fecha_max}")
                 
                 with col3:
-                    # CORREGIDO: Solo último día, skip NaN
+                    # CORREGIDO: Solo último día, suma con skipna=True (incluye todos los registros)
                     df_negativos_ultimo = df_ultimo_dia[df_ultimo_dia["Stock"] < 0].copy()
-                    # Filtrar solo registros con CostStock válido (no NaN)
-                    df_negativos_con_costo = df_negativos_ultimo[df_negativos_ultimo["CostStock"].notna()]
-                    costo_total_ultimo_dia = abs(df_negativos_con_costo["CostStock"].sum())
+                    # Sumar TODOS los costos, incluyendo registros con NaN (que se ignoran en la suma)
+                    costo_total_ultimo_dia = abs(df_negativos_ultimo["CostStock"].sum(skipna=True))
                     
-                    # Debug: contar registros sin costo
-                    registros_sin_costo = len(df_negativos_ultimo) - len(df_negativos_con_costo)
+                    # Debug: contar registros sin costo (solo para info)
+                    registros_con_nan = df_negativos_ultimo["CostStock"].isna().sum()
                     
                     help_text = f"Costo del inventario negativo en {ultima_fecha.strftime('%Y-%m-%d')}"
-                    if registros_sin_costo > 0:
-                        help_text += f" | ⚠️ {registros_sin_costo:,} registros sin CostStock válido"
+                    if registros_con_nan > 0:
+                        help_text += f" | ℹ️ {registros_con_nan:,} registros sin costo (NaN ignorados en suma)"
                     
                     st.metric("Costo Total Negativo", f"${costo_total_ultimo_dia:,.0f}",
                              help=help_text)
@@ -2538,15 +2537,20 @@ def main():
                     st.markdown("---")
                     st.markdown("### 📊 Resumen de Datos Filtrados")
                     
-                    # Calcular métricas USANDO EL COMPLETO (no el display limitado)
+                    # Calcular métricas del ÚLTIMO DÍA (sin filtros de pivot, datos reales)
                     fecha_max_filtrada = df_filtered["fecha"].max()
                     df_filtered_ultimo = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
+                    
+                    # Stock y costo del último día
                     total_stock_ultimo = abs(df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0]["Stock"].sum())
-                    costo_filtrado = abs(df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0]["CostStock"].sum())
-                    pallets_vista = len(historico_pivot_completo)
-                    productos_vista = historico_pivot_completo["Codigo"].nunique()
-                    almacenes_vista = historico_pivot_completo["Almacen"].nunique()
-                    zonas_vista = historico_pivot_completo["Zona"].nunique()
+                    costo_filtrado = abs(df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0]["CostStock"].sum(skipna=True))
+                    
+                    # Contar del DATAFRAME ORIGINAL (no del pivot filtrado)
+                    # Para coincidir con los datos reales del último día
+                    pallets_vista = len(df_filtered_ultimo)  # Total de registros del último día
+                    productos_vista = df_filtered_ultimo["ProductId"].nunique()  # Productos únicos del último día
+                    almacenes_vista = df_filtered_ultimo["InventLocationId"].nunique()
+                    zonas_vista = df_filtered_ultimo["CompanyId"].nunique()
                     
                     # Métricas principales en tarjetas simples
                     col1, col2, col3, col4 = st.columns(4)
