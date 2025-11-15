@@ -2240,10 +2240,15 @@ def main():
                     st.markdown("---")
                     st.markdown("### 📊 Comparativa entre Almacenes Seleccionados")
                     
-                    # Calcular datos por almacén (último día)
+                    # Calcular datos por almacén (último día) - INCLUIR Stock=0 con costo
                     fecha_max_comp = df_filtered["fecha"].max()
                     df_comp = df_filtered[df_filtered["fecha"] == fecha_max_comp]
-                    df_comp_neg = df_comp[df_comp["Stock"] < 0]
+                    
+                    # Filtrar: Stock < 0 O Stock = 0 con costo
+                    df_comp_neg = df_comp[
+                        (df_comp["Stock"] < 0) | 
+                        ((df_comp["Stock"] == 0) & (df_comp["CostStock"].notna()) & (df_comp["CostStock"] != 0))
+                    ]
                     
                     if len(df_comp_neg) > 0 and len(almacenes_seleccionados) > 0:
                         comparativa_alm = df_comp_neg.groupby("InventLocationId").agg({
