@@ -1859,15 +1859,9 @@ def main():
             else:
                 st.success(f"✅ Base de datos cargada exitosamente: {len(df_historico):,} registros")
                 
-                # OBTENER ÚLTIMO DÍA DISPONIBLE
+                # OBTENER ÚLTIMO DÍA DISPONIBLE (SIN FILTROS - todos los registros)
                 ultima_fecha = df_historico["fecha"].max()
-                df_ultimo_dia_temp = df_historico[df_historico["fecha"] == ultima_fecha]
-                
-                # Aplicar mismo filtro que panel inferior para consistencia
-                df_ultimo_dia = df_ultimo_dia_temp[
-                    (df_ultimo_dia_temp["Stock"] < 0) | 
-                    ((df_ultimo_dia_temp["Stock"] == 0) & (df_ultimo_dia_temp["CostStock"].notna()) & (df_ultimo_dia_temp["CostStock"] != 0))
-                ]
+                df_ultimo_dia = df_historico[df_historico["fecha"] == ultima_fecha]
                 
                 # BANNER PROFESIONAL CON FECHA
                 st.markdown(f"""
@@ -1892,22 +1886,18 @@ def main():
                     st.metric("Días en Histórico", fechas_unicas, help=f"Desde {fecha_min} hasta {fecha_max}")
                 
                 with col3:
-                    # CORREGIDO: Incluir Stock < 0 Y Stock = 0 con costo
-                    # Filtro para costos: negativos O stock=0 con costo
-                    df_con_costo = df_ultimo_dia[
-                        (df_ultimo_dia["Stock"] < 0) | 
-                        ((df_ultimo_dia["Stock"] == 0) & (df_ultimo_dia["CostStock"].notna()) & (df_ultimo_dia["CostStock"] != 0))
-                    ].copy()
+                    # Costo Total: Solo incluir registros con costo negativo (CostStock < 0)
+                    # NO filtrar por Stock, porque hay Stock=0 con CostStock<0
+                    df_con_costo_negativo = df_ultimo_dia[df_ultimo_dia["CostStock"] < 0].copy()
+                    costo_total_ultimo_dia = abs(df_con_costo_negativo["CostStock"].sum(skipna=True))
                     
-                    # Sumar TODOS los costos
-                    costo_total_ultimo_dia = abs(df_con_costo["CostStock"].sum(skipna=True))
-                    
-                    # Debug: contar registros
-                    registros_stock_cero_con_costo = len(df_con_costo[(df_con_costo["Stock"] == 0) & (df_con_costo["CostStock"] != 0)])
+                    # Debug: contar tipos de registros
+                    registros_stock_cero_con_costo = len(df_con_costo_negativo[df_con_costo_negativo["Stock"] == 0])
+                    registros_stock_negativo = len(df_con_costo_negativo[df_con_costo_negativo["Stock"] < 0])
                     
                     help_text = f"Costo del inventario negativo en {ultima_fecha.strftime('%Y-%m-%d')}"
                     if registros_stock_cero_con_costo > 0:
-                        help_text += f" | ℹ️ Incluye {registros_stock_cero_con_costo:,} registros con Stock=0 pero con costo"
+                        help_text += f" | ℹ️ Incluye {registros_stock_cero_con_costo:,} con Stock=0 y costo negativo"
                     
                     st.metric("Costo Total Negativo", f"${costo_total_ultimo_dia:,.0f}",
                              help=help_text)
@@ -1922,11 +1912,8 @@ def main():
                 st.markdown("---")
                 st.markdown("### 💰 Análisis de Costos por Zona")
                 
-                # Calcular datos - INCLUIR Stock=0 con costo
-                df_para_costos = df_ultimo_dia[
-                    (df_ultimo_dia["Stock"] < 0) | 
-                    ((df_ultimo_dia["Stock"] == 0) & (df_ultimo_dia["CostStock"].notna()) & (df_ultimo_dia["CostStock"] != 0))
-                ]
+                # Calcular datos - Filtrar solo por CostStock < 0 (incluye Stock=0 con costo)
+                df_para_costos = df_ultimo_dia[df_ultimo_dia["CostStock"] < 0]
                 
                 costos_resumen = df_para_costos.groupby("CompanyId").agg({
                     "CostStock": "sum",
@@ -2203,12 +2190,9 @@ def main():
                 # APLICAR FILTROS RELACIONADOS
                 df_filtered = df_historico.copy()
                 
-                # 1. Filtro de negativos - INCLUIR Stock=0 con costo
+                # 1. Filtro de negativos - Filtrar por CostStock < 0 (incluye Stock=0 con costo)
                 if solo_negativos_hist:
-                    df_filtered = df_filtered[
-                        (df_filtered["Stock"] < 0) | 
-                        ((df_filtered["Stock"] == 0) & (df_filtered["CostStock"].notna()) & (df_filtered["CostStock"] != 0))
-                    ]
+                    df_filtered = df_filtered[df_filtered["CostStock"] < 0]
                 
                 # 2. Filtro por Zonas (multiselect)
                 if zonas_seleccionadas:
@@ -2249,15 +2233,10 @@ def main():
                     st.markdown("---")
                     st.markdown("### 📊 Comparativa entre Almacenes Seleccionados")
                     
-                    # Calcular datos por almacén (último día) - INCLUIR Stock=0 con costo
+                    # Calcular datos por almacén (último día) - Ya viene filtrado por CostStock < 0
                     fecha_max_comp = df_filtered["fecha"].max()
                     df_comp = df_filtered[df_filtered["fecha"] == fecha_max_comp]
-                    
-                    # Filtrar: Stock < 0 O Stock = 0 con costo
-                    df_comp_neg = df_comp[
-                        (df_comp["Stock"] < 0) | 
-                        ((df_comp["Stock"] == 0) & (df_comp["CostStock"].notna()) & (df_comp["CostStock"] != 0))
-                    ]
+                    df_comp_neg = df_comp  # Ya está filtrado
                     
                     if len(df_comp_neg) > 0 and len(almacenes_seleccionados) > 0:
                         comparativa_alm = df_comp_neg.groupby("InventLocationId").agg({
@@ -2580,12 +2559,8 @@ def main():
                     # Stock negativo (solo < 0)
                     total_stock_ultimo = abs(df_filtered_ultimo[df_filtered_ultimo["Stock"] < 0]["Stock"].sum())
                     
-                    # Costo: INCLUIR Stock < 0 Y Stock = 0 con costo
-                    df_con_costo_filtrado = df_filtered_ultimo[
-                        (df_filtered_ultimo["Stock"] < 0) | 
-                        ((df_filtered_ultimo["Stock"] == 0) & (df_filtered_ultimo["CostStock"].notna()) & (df_filtered_ultimo["CostStock"] != 0))
-                    ]
-                    costo_filtrado = abs(df_con_costo_filtrado["CostStock"].sum(skipna=True))
+                    # Costo: Ya viene filtrado por CostStock < 0 del filtro maestro
+                    costo_filtrado = abs(df_filtered_ultimo["CostStock"].sum(skipna=True))
                     
                     # Contar del DATAFRAME ORIGINAL (no del pivot filtrado)
                     # Para coincidir con los datos reales del último día
@@ -2701,17 +2676,11 @@ def main():
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            # Top Zonas por Costo - INCLUIR Stock=0 con costo
+                            # Top Zonas por Costo - Ya viene filtrado por CostStock < 0
                             fecha_max_filtrada = df_filtered["fecha"].max()
                             df_filtered_ultimo_viz = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
                             
-                            # Filtrar: Stock < 0 O Stock = 0 con costo
-                            df_para_costos_viz = df_filtered_ultimo_viz[
-                                (df_filtered_ultimo_viz["Stock"] < 0) | 
-                                ((df_filtered_ultimo_viz["Stock"] == 0) & (df_filtered_ultimo_viz["CostStock"].notna()) & (df_filtered_ultimo_viz["CostStock"] != 0))
-                            ]
-                            
-                            costos_por_zona = df_para_costos_viz.groupby("CompanyId")["CostStock"].sum()
+                            costos_por_zona = df_filtered_ultimo_viz.groupby("CompanyId")["CostStock"].sum()
                             costos_por_zona = costos_por_zona.abs().sort_values(ascending=False).head(10)
                             if len(costos_por_zona) > 0:
                                 fig_costos_zona = px.bar(
