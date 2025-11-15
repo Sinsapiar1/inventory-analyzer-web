@@ -1861,7 +1861,13 @@ def main():
                 
                 # OBTENER ÚLTIMO DÍA DISPONIBLE
                 ultima_fecha = df_historico["fecha"].max()
-                df_ultimo_dia = df_historico[df_historico["fecha"] == ultima_fecha]
+                df_ultimo_dia_temp = df_historico[df_historico["fecha"] == ultima_fecha]
+                
+                # Aplicar mismo filtro que panel inferior para consistencia
+                df_ultimo_dia = df_ultimo_dia_temp[
+                    (df_ultimo_dia_temp["Stock"] < 0) | 
+                    ((df_ultimo_dia_temp["Stock"] == 0) & (df_ultimo_dia_temp["CostStock"].notna()) & (df_ultimo_dia_temp["CostStock"] != 0))
+                ]
                 
                 # BANNER PROFESIONAL CON FECHA
                 st.markdown(f"""
@@ -2518,20 +2524,32 @@ def main():
                         else:
                             return 'background-color: #f8d7da; color: #721c24; font-weight: bold'  # Rojo claro
                     
-                    # Aplicar formato condicional a columnas de fechas
-                    styled_pivot = historico_pivot_display.style.applymap(
-                        color_negativo_celda,
-                        subset=fecha_cols_str
-                    )
-                    
-                    st.dataframe(
-                        styled_pivot,
-                        column_config=column_config,
-                        width='stretch',
-                        height=500,
-                        use_container_width=True,
-                        hide_index=True
-                    )
+                    # Aplicar formato condicional SOLO si no hay muchas filas (performance)
+                    if len(historico_pivot_display) <= 2000:
+                        styled_pivot = historico_pivot_display.style.applymap(
+                            color_negativo_celda,
+                            subset=fecha_cols_str
+                        )
+                        
+                        st.dataframe(
+                            styled_pivot,
+                            column_config=column_config,
+                            width='stretch',
+                            height=500,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                    else:
+                        # Sin estilos para mejor performance con muchas filas
+                        st.warning(f"⚠️ Mostrando {len(historico_pivot_display):,} filas sin formato condicional (mejora el rendimiento)")
+                        st.dataframe(
+                            historico_pivot_display,
+                            column_config=column_config,
+                            width='stretch',
+                            height=500,
+                            use_container_width=True,
+                            hide_index=True
+                        )
                     
                     # Leyenda explicativa
                     with st.expander("ℹ️ Guía de Lectura de la Tabla"):
