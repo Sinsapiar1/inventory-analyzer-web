@@ -2197,9 +2197,12 @@ def main():
                 # APLICAR FILTROS RELACIONADOS
                 df_filtered = df_historico.copy()
                 
-                # 1. Filtro de negativos
+                # 1. Filtro de negativos - INCLUIR Stock=0 con costo
                 if solo_negativos_hist:
-                    df_filtered = df_filtered[df_filtered["Stock"] < 0]
+                    df_filtered = df_filtered[
+                        (df_filtered["Stock"] < 0) | 
+                        ((df_filtered["Stock"] == 0) & (df_filtered["CostStock"].notna()) & (df_filtered["CostStock"] != 0))
+                    ]
                 
                 # 2. Filtro por Zonas (multiselect)
                 if zonas_seleccionadas:
