@@ -1783,52 +1783,35 @@ def main():
         # CSS PROFESIONAL para tablas - Adaptable a modo claro/oscuro
         st.markdown("""
         <style>
-        /* Mejorar contraste y adaptabilidad de tablas */
-        [data-testid="stDataFrame"] {
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        
-        /* Headers de tabla */
+        /* Headers de tabla con gradiente profesional */
         [data-testid="stDataFrame"] thead tr th {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             font-weight: 600 !important;
             padding: 12px 8px !important;
-            border: none !important;
             text-align: center !important;
         }
         
-        /* Celdas de tabla - se adaptan automáticamente al tema */
-        [data-testid="stDataFrame"] tbody tr {
+        /* Hover effect en filas - adaptable a tema */
+        [data-testid="stDataFrame"] tbody tr:hover {
+            background-color: rgba(102, 126, 234, 0.06) !important;
             transition: background-color 0.2s ease;
         }
         
-        [data-testid="stDataFrame"] tbody tr:hover {
-            background-color: rgba(102, 126, 234, 0.08) !important;
-        }
-        
-        /* Bordes suaves */
-        [data-testid="stDataFrame"] td {
-            border-bottom: 1px solid rgba(0,0,0,0.05) !important;
-            padding: 8px !important;
-        }
-        
-        /* Scrollbar personalizado */
+        /* Scrollbar horizontal y vertical personalizado */
         [data-testid="stDataFrame"] ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+            width: 10px;
+            height: 10px;
         }
         
         [data-testid="stDataFrame"] ::-webkit-scrollbar-track {
-            background: rgba(0,0,0,0.05);
-            border-radius: 10px;
+            background: rgba(102, 126, 234, 0.1);
+            border-radius: 5px;
         }
         
         [data-testid="stDataFrame"] ::-webkit-scrollbar-thumb {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 10px;
+            border-radius: 5px;
         }
         
         [data-testid="stDataFrame"] ::-webkit-scrollbar-thumb:hover {
