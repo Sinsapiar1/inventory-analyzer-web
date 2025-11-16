@@ -2507,32 +2507,36 @@ def main():
                         else:
                             return 'background-color: #f8d7da; color: #721c24; font-weight: bold'  # Rojo claro
                     
-                    # Aplicar formato condicional SOLO si no hay muchas filas (performance)
+                    # Aplicar formato condicional según cantidad de filas (optimización performance)
                     if len(historico_pivot_display) <= 2000:
+                        # Estilo completo con colores por gravedad
                         styled_pivot = historico_pivot_display.style.applymap(
                             color_negativo_celda,
                             subset=fecha_cols_str
                         )
-                        
-                        st.dataframe(
-                            styled_pivot,
-                            column_config=column_config,
-                            width='stretch',
-                            height=500,
-                            use_container_width=True,
-                            hide_index=True
-                        )
                     else:
-                        # Sin estilos para mejor performance con muchas filas
-                        st.warning(f"⚠️ Mostrando {len(historico_pivot_display):,} filas sin formato condicional (mejora el rendimiento)")
-                        st.dataframe(
-                            historico_pivot_display,
-                            column_config=column_config,
-                            width='stretch',
-                            height=500,
-                            use_container_width=True,
-                            hide_index=True
+                        # Estilo simplificado: solo colorear celdas vacías (más rápido)
+                        def color_solo_vacias(val):
+                            """Solo colorea celdas vacías - MUY rápido"""
+                            if pd.isna(val):
+                                return f'background-color: {color_celdas_none}'
+                            return ''
+                        
+                        styled_pivot = historico_pivot_display.style.applymap(
+                            color_solo_vacias,
+                            subset=fecha_cols_str
                         )
+                        st.info(f"ℹ️ Mostrando {len(historico_pivot_display):,} filas con formato simplificado (mejor rendimiento)")
+                    
+                    # Mostrar tabla (SIEMPRE con estilo para mantener filtros dinámicos)
+                    st.dataframe(
+                        styled_pivot,
+                        column_config=column_config,
+                        width='stretch',
+                        height=500,
+                        use_container_width=True,
+                        hide_index=True
+                    )
                     
                     # Leyenda explicativa
                     with st.expander("ℹ️ Guía de Lectura de la Tabla"):
