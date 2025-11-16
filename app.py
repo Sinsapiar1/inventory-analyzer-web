@@ -1780,6 +1780,63 @@ def main():
 
     # ========== MODO 3: ANÁLISIS HISTÓRICO DB ==========
     elif modo == "🗄️ Histórico DB":
+        # CSS PROFESIONAL para tablas - Adaptable a modo claro/oscuro
+        st.markdown("""
+        <style>
+        /* Mejorar contraste y adaptabilidad de tablas */
+        [data-testid="stDataFrame"] {
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        /* Headers de tabla */
+        [data-testid="stDataFrame"] thead tr th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            font-weight: 600 !important;
+            padding: 12px 8px !important;
+            border: none !important;
+            text-align: center !important;
+        }
+        
+        /* Celdas de tabla - se adaptan automáticamente al tema */
+        [data-testid="stDataFrame"] tbody tr {
+            transition: background-color 0.2s ease;
+        }
+        
+        [data-testid="stDataFrame"] tbody tr:hover {
+            background-color: rgba(102, 126, 234, 0.08) !important;
+        }
+        
+        /* Bordes suaves */
+        [data-testid="stDataFrame"] td {
+            border-bottom: 1px solid rgba(0,0,0,0.05) !important;
+            padding: 8px !important;
+        }
+        
+        /* Scrollbar personalizado */
+        [data-testid="stDataFrame"] ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        [data-testid="stDataFrame"] ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.05);
+            border-radius: 10px;
+        }
+        
+        [data-testid="stDataFrame"] ::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+        }
+        
+        [data-testid="stDataFrame"] ::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
         st.subheader("🗄️ Análisis Histórico desde Base de Datos SQLite")
         
         st.info("""
@@ -2508,16 +2565,28 @@ def main():
                             return 'background-color: #f8d7da; color: #721c24; font-weight: bold'  # Rojo claro
                     
                     # Aplicar formato condicional según cantidad de filas (optimización performance)
+                    # Límites: <= 2000 (full), 2001-5000 (simple), > 5000 (sin estilos)
+                    
                     if len(historico_pivot_display) <= 2000:
-                        # Estilo completo con colores por gravedad
+                        # ✅ Estilo COMPLETO con colores por gravedad
                         styled_pivot = historico_pivot_display.style.applymap(
                             color_negativo_celda,
                             subset=fecha_cols_str
                         )
-                    else:
-                        # Estilo simplificado: solo colorear celdas vacías (más rápido)
+                        
+                        st.dataframe(
+                            styled_pivot,
+                            column_config=column_config,
+                            width='stretch',
+                            height=500,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                    
+                    elif len(historico_pivot_display) <= 5000:
+                        # 🔶 Estilo SIMPLIFICADO (solo celdas vacías)
                         def color_solo_vacias(val):
-                            """Solo colorea celdas vacías - MUY rápido"""
+                            """Solo colorea celdas vacías - Rápido"""
                             if pd.isna(val):
                                 return f'background-color: {color_celdas_none}'
                             return ''
@@ -2527,16 +2596,31 @@ def main():
                             subset=fecha_cols_str
                         )
                         st.info(f"ℹ️ Mostrando {len(historico_pivot_display):,} filas con formato simplificado (mejor rendimiento)")
+                        
+                        st.dataframe(
+                            styled_pivot,
+                            column_config=column_config,
+                            width='stretch',
+                            height=500,
+                            use_container_width=True,
+                            hide_index=True
+                        )
                     
-                    # Mostrar tabla (SIEMPRE con estilo para mantener filtros dinámicos)
-                    st.dataframe(
-                        styled_pivot,
-                        column_config=column_config,
-                        width='stretch',
-                        height=500,
-                        use_container_width=True,
-                        hide_index=True
-                    )
+                    else:
+                        # ⚠️ SIN estilos para evitar crash (> 5000 filas)
+                        st.warning(
+                            f"⚠️ Mostrando {len(historico_pivot_display):,} filas SIN formato condicional para evitar sobrecarga. "
+                            f"\n\n💡 **Sugerencia:** Selecciona máximo 5000 filas para ver formato con colores y filtros dinámicos."
+                        )
+                        
+                        st.dataframe(
+                            historico_pivot_display,
+                            column_config=column_config,
+                            width='stretch',
+                            height=500,
+                            use_container_width=True,
+                            hide_index=True
+                        )
                     
                     # Leyenda explicativa
                     with st.expander("ℹ️ Guía de Lectura de la Tabla"):
