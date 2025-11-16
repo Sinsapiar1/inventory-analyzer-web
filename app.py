@@ -2599,22 +2599,23 @@ def main():
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            evolution_data_hist = []
-                            for fecha_str in sorted(fecha_cols_str):
-                                if fecha_str in historico_pivot_completo.columns:
-                                    columna = pd.to_numeric(historico_pivot_completo[fecha_str], errors='coerce')
-                                    total = columna.sum(skipna=True)
-                                    if pd.notna(total) and total != 0:
-                                        evolution_data_hist.append({"Fecha": fecha_str, "Total": abs(total)})
+                            # Evolución Total Stock Negativo - Usar df_filtered agrupado por fecha
+                            # NO usar pivot (evita contar duplicados)
+                            evolution_data_hist = df_filtered.groupby("fecha").agg({
+                                "Stock": "sum"  # Suma el stock por fecha (ya negativos)
+                            }).reset_index()
                             
-                            if evolution_data_hist:
-                                evo_df_hist = pd.DataFrame(evolution_data_hist)
+                            evolution_data_hist["Stock_Abs"] = evolution_data_hist["Stock"].abs()
+                            evolution_data_hist = evolution_data_hist.sort_values("fecha")
+                            
+                            if len(evolution_data_hist) > 0:
                                 fig_evo_hist = px.line(
-                                    evo_df_hist,
-                                    x="Fecha",
-                                    y="Total",
+                                    evolution_data_hist,
+                                    x="fecha",
+                                    y="Stock_Abs",
                                     title="📊 Evolución Total Stock Negativo",
-                                    markers=True
+                                    markers=True,
+                                    labels={"fecha": "Fecha", "Stock_Abs": "Total"}
                                 )
                                 fig_evo_hist.update_traces(line_color="#ff4444", line_width=3)
                                 fig_evo_hist.update_layout(height=350)
@@ -2626,7 +2627,8 @@ def main():
                             fecha_max_filtrada = df_filtered["fecha"].max()
                             df_filtered_ultimo_dist = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
                             
-                            zona_data_hist = df_filtered_ultimo_dist[df_filtered_ultimo_dist["Stock"] < 0].groupby("CompanyId")["Stock"].sum().abs()
+                            # Distribución por Zona - Usar mismo filtro que todo (ya viene con CostStock < 0)
+                            zona_data_hist = df_filtered_ultimo_dist.groupby("CompanyId")["Stock"].sum().abs()
                             zona_data_hist = zona_data_hist[zona_data_hist > 0]  # Solo positivos
                             
                             if len(zona_data_hist) > 0:
@@ -2661,28 +2663,17 @@ def main():
                                 st.plotly_chart(fig_costos_zona, use_container_width=True)
                         
                         with col2:
-                            # Top Almacenes por Stock Negativo
-                            almacen_data_hist = {}
-                            for almacen in historico_pivot_completo["Almacen"].unique():
-                                if pd.notna(almacen):
-                                    subset = historico_pivot_completo[historico_pivot_completo["Almacen"] == almacen]
-                                    total = 0
-                                    for fecha_str in fecha_cols_str:
-                                        if fecha_str in subset.columns:
-                                            columna_numerica = pd.to_numeric(subset[fecha_str], errors='coerce')
-                                            total += columna_numerica.sum(skipna=True)
-                                    
-                                    if total != 0:
-                                        almacen_data_hist[almacen] = abs(total)
+                            # Top Almacenes por Stock Negativo - SOLO ÚLTIMO DÍA
+                            # Usar df_filtered_ultimo_viz (ya definido arriba)
+                            almacenes_stock = df_filtered_ultimo_viz.groupby("InventLocationId")["Stock"].sum().abs()
+                            almacenes_stock = almacenes_stock.sort_values(ascending=False).head(10)
                             
-                            if almacen_data_hist:
-                                # Top 10 almacenes
-                                top_almacenes = dict(sorted(almacen_data_hist.items(), key=lambda x: x[1], reverse=True)[:10])
+                            if len(almacenes_stock) > 0:
                                 fig_almacen_hist = px.bar(
-                                    x=list(top_almacenes.values()),
-                                    y=list(top_almacenes.keys()),
+                                    x=almacenes_stock.values,
+                                    y=almacenes_stock.index,
                                     orientation='h',
-                                    title="📦 Top 10 Almacenes por Stock Negativo",
+                                    title=f"📦 Top 10 Almacenes por Stock Negativo ({fecha_max_filtrada.strftime('%Y-%m-%d')})",
                                     labels={"x": "Stock Negativo", "y": "Almacén"}
                                 )
                                 fig_almacen_hist.update_traces(marker_color='#4ecdc4')
