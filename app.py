@@ -1912,7 +1912,8 @@ def main():
                 st.markdown("---")
                 st.markdown("### 💰 Análisis de Costos por Zona")
                 
-                # Calcular datos - Filtrar solo por CostStock < 0 (incluye Stock=0 con costo)
+                # Calcular datos - Filtrar por CostStock < 0 para COSTOS
+                # (incluye Stock < 0 con costo Y Stock = 0 con costo negativo)
                 df_para_costos = df_ultimo_dia[df_ultimo_dia["CostStock"] < 0]
                 
                 costos_resumen = df_para_costos.groupby("CompanyId").agg({
@@ -2190,9 +2191,12 @@ def main():
                 # APLICAR FILTROS RELACIONADOS
                 df_filtered = df_historico.copy()
                 
-                # 1. Filtro de negativos - Filtrar por CostStock < 0 (incluye Stock=0 con costo)
+                # 1. Filtro de negativos - Incluir Stock < 0 O (Stock = 0 con CostStock < 0)
                 if solo_negativos_hist:
-                    df_filtered = df_filtered[df_filtered["CostStock"] < 0]
+                    df_filtered = df_filtered[
+                        (df_filtered["Stock"] < 0) | 
+                        ((df_filtered["Stock"] == 0) & (df_filtered["CostStock"] < 0))
+                    ]
                 
                 # 2. Filtro por Zonas (multiselect)
                 if zonas_seleccionadas:
@@ -2556,8 +2560,9 @@ def main():
                     fecha_max_filtrada = df_filtered["fecha"].max()
                     df_filtered_ultimo = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
                     
-                    # Costo: Ya viene filtrado por CostStock < 0 del filtro maestro
-                    costo_filtrado = abs(df_filtered_ultimo["CostStock"].sum(skipna=True))
+                    # Costo: Filtrar explícitamente por CostStock < 0 (no confiar solo en filtro maestro)
+                    df_con_costo_filtrado = df_filtered_ultimo[df_filtered_ultimo["CostStock"] < 0]
+                    costo_filtrado = abs(df_con_costo_filtrado["CostStock"].sum(skipna=True))
                     
                     # Contar almacenes y zonas
                     productos_vista = df_filtered_ultimo["ProductId"].nunique()
@@ -2644,11 +2649,12 @@ def main():
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            # Top Zonas por Costo - Ya viene filtrado por CostStock < 0
+                            # Top Zonas por Costo - Filtrar explícitamente por CostStock < 0
                             fecha_max_filtrada = df_filtered["fecha"].max()
                             df_filtered_ultimo_viz = df_filtered[df_filtered["fecha"] == fecha_max_filtrada]
+                            df_filtered_con_costo = df_filtered_ultimo_viz[df_filtered_ultimo_viz["CostStock"] < 0]
                             
-                            costos_por_zona = df_filtered_ultimo_viz.groupby("CompanyId")["CostStock"].sum()
+                            costos_por_zona = df_filtered_con_costo.groupby("CompanyId")["CostStock"].sum()
                             costos_por_zona = costos_por_zona.abs().sort_values(ascending=False).head(10)
                             if len(costos_por_zona) > 0:
                                 fig_costos_zona = px.bar(
