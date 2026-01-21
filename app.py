@@ -1023,6 +1023,218 @@ def load_historico_data(db_path):
     except Exception as e:
         return None, False, f"Error al cargar datos: {str(e)}"
 
+
+# ========== NUEVA FUNCIÓN: PROCESAR ERP PARA HISTÓRICO DB ==========
+
+def preprocess_erp_for_historico(file_content, filename, sheet_index=0, fecha_datos=None, zona_default="MANUAL"):
+    """
+    Procesa archivo crudo del ERP y lo convierte al formato de la DB histórica.
+    
+    Formato de salida (columnas de la DB):
+    - fecha: Fecha del reporte (parámetro o fecha actual)
+    - Stock: Inventario físico (solo negativos)
+    - CostStock: Costo del stock (0 si no disponible)
+    - ProductId: Código del producto
+    - CompanyId: Zona/Compañía
+    - InventLocationId: Almacén
+    - LabelId: ID del pallet
+    - ProductName_es: Nombre del producto
+    
+    Args:
+        file_content: Contenido del archivo Excel en bytes
+        filename: Nombre del archivo
+        sheet_index: Índice de la hoja a leer (default: 0)
+        fecha_datos: Fecha para los datos (default: fecha actual)
+        zona_default: Zona por defecto si no se puede detectar
+        
+    Returns:
+        tuple: (df_formato_db, success, error_message, stats)
+    """
+    try:
+        # Leer Excel desde el archivo crudo
+        df = pd.read_excel(io.BytesIO(file_content), sheet_name=sheet_index)
+        
+        # Guardar df original para stats
+        df_original = df.copy()
+        total_original = len(df_original)
+        
+        # Mapeo flexible de columnas ERP -> DB histórica
+        column_mapping = {
+            # ProductId (Código)
+            "Código de artículo": "ProductId",
+            "Código": "ProductId",
+            "Codigo de artículo": "ProductId",
+            "Codigo": "ProductId",
+            "ProductId": "ProductId",
+            "Product Id": "ProductId",
+            "Articulo": "ProductId",
+            "Artículo": "ProductId",
+            
+            # ProductName_es (Nombre)
+            "Nombre del producto": "ProductName_es",
+            "Nombre": "ProductName_es",
+            "ProductName_es": "ProductName_es",
+            "Descripcion": "ProductName_es",
+            "Descripción": "ProductName_es",
+            
+            # InventLocationId (Almacén)
+            "Almacén": "InventLocationId",
+            "Almacen": "InventLocationId",
+            "InventLocationId": "InventLocationId",
+            "Ubicacion": "InventLocationId",
+            "Ubicación": "InventLocationId",
+            "Location": "InventLocationId",
+            
+            # LabelId (ID Pallet)
+            "Id de pallet": "LabelId",
+            "ID de Pallet": "LabelId",
+            "Id Pallet": "LabelId",
+            "LabelId": "LabelId",
+            "Pallet": "LabelId",
+            "ID_Pallet": "LabelId",
+            
+            # Stock (Inventario físico)
+            "Inventario físico": "Stock",
+            "Inventario Físico": "Stock",
+            "Inventario fisico": "Stock",
+            "Stock": "Stock",
+            "Cantidad": "Stock",
+            "Qty": "Stock",
+            
+            # CostStock (Costo)
+            "Costo": "CostStock",
+            "CostStock": "CostStock",
+            "Costo Stock": "CostStock",
+            "Valor": "CostStock",
+            "Importe": "CostStock",
+            "Física disponible": "CostStock",
+            "Fisica disponible": "CostStock",
+            
+            # CompanyId (Zona)
+            "Zona": "CompanyId",
+            "CompanyId": "CompanyId",
+            "Company": "CompanyId",
+            "Compañia": "CompanyId",
+            "Compañía": "CompanyId",
+            "Region": "CompanyId",
+            "Región": "CompanyId",
+        }
+        
+        # Renombrar columnas encontradas
+        for col_original, col_nuevo in column_mapping.items():
+            if col_original in df.columns and col_nuevo not in df.columns:
+                df = df.rename(columns={col_original: col_nuevo})
+        
+        # Verificar columnas mínimas requeridas
+        required_cols = ["ProductId", "Stock"]
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        
+        if missing_cols:
+            # Intentar buscar columnas por contenido
+            available_cols = list(df.columns)
+            return None, False, f"Faltan columnas requeridas: {', '.join(missing_cols)}. Columnas disponibles: {', '.join(str(c) for c in available_cols[:10])}", None
+        
+        # Convertir Stock a numérico
+        df["Stock"] = pd.to_numeric(df["Stock"], errors='coerce')
+        
+        # Filtrar solo negativos
+        df_negativos = df[df["Stock"] < 0].copy()
+        
+        if len(df_negativos) == 0:
+            return None, False, "No se encontraron registros con inventario negativo", None
+        
+        # Agregar columnas faltantes con valores por defecto
+        if "ProductName_es" not in df_negativos.columns:
+            df_negativos["ProductName_es"] = ""
+        
+        if "InventLocationId" not in df_negativos.columns:
+            df_negativos["InventLocationId"] = "DESCONOCIDO"
+        
+        if "LabelId" not in df_negativos.columns:
+            df_negativos["LabelId"] = ""
+        
+        if "CostStock" not in df_negativos.columns:
+            # Si no hay costo, usar Stock como aproximación o 0
+            df_negativos["CostStock"] = df_negativos["Stock"]  # Usar el mismo valor de stock
+        
+        if "CompanyId" not in df_negativos.columns:
+            # Intentar derivar zona del almacén si sigue patrón (ej: FL001 -> FL)
+            if "InventLocationId" in df_negativos.columns:
+                df_negativos["CompanyId"] = df_negativos["InventLocationId"].astype(str).str[:2].str.upper()
+                # Si no tiene patrón válido (solo 2 letras), usar zona_default
+                mask_invalid = ~df_negativos["CompanyId"].str.match(r'^[A-Z]{2}$', na=False)
+                df_negativos.loc[mask_invalid, "CompanyId"] = zona_default
+            else:
+                df_negativos["CompanyId"] = zona_default
+        
+        # Establecer fecha
+        if fecha_datos is None:
+            fecha_datos = datetime.now().date()
+        df_negativos["fecha"] = pd.to_datetime(fecha_datos)
+        
+        # Limpiar y convertir tipos de datos
+        df_negativos["ProductId"] = df_negativos["ProductId"].astype(str).str.replace(",", "").str.split(".").str[0].str.strip()
+        df_negativos["ProductName_es"] = df_negativos["ProductName_es"].astype(str)
+        df_negativos["InventLocationId"] = df_negativos["InventLocationId"].astype(str)
+        df_negativos["LabelId"] = df_negativos["LabelId"].astype(str).str.replace(",", "").str.split(".").str[0].str.strip()
+        df_negativos["CompanyId"] = df_negativos["CompanyId"].astype(str)
+        df_negativos["Stock"] = pd.to_numeric(df_negativos["Stock"], errors='coerce').fillna(0)
+        df_negativos["CostStock"] = pd.to_numeric(df_negativos["CostStock"], errors='coerce')
+        
+        # Seleccionar solo columnas del formato DB
+        columnas_db = ["fecha", "Stock", "CostStock", "ProductId", "CompanyId", "InventLocationId", "LabelId", "ProductName_es"]
+        df_final = df_negativos[columnas_db].copy()
+        
+        # Estadísticas
+        stats = {
+            "total_original": total_original,
+            "total_negativos": len(df_final),
+            "productos_unicos": df_final["ProductId"].nunique(),
+            "almacenes_unicos": df_final["InventLocationId"].nunique(),
+            "zonas_detectadas": df_final["CompanyId"].unique().tolist(),
+            "fecha_datos": fecha_datos,
+            "stock_total": df_final["Stock"].sum(),
+            "costo_total": df_final["CostStock"].sum() if df_final["CostStock"].notna().any() else 0
+        }
+        
+        return df_final, True, None, stats
+        
+    except Exception as e:
+        import traceback
+        return None, False, f"Error al procesar archivo: {str(e)}\n{traceback.format_exc()}", None
+
+
+def combine_historico_with_today(df_historico, df_today):
+    """
+    Combina datos históricos de la DB con datos del día actual.
+    
+    Si ya existe data para la fecha de hoy, la reemplaza.
+    
+    Args:
+        df_historico: DataFrame con datos históricos de la DB
+        df_today: DataFrame con datos procesados del día actual
+        
+    Returns:
+        DataFrame combinado
+    """
+    if df_today is None or df_today.empty:
+        return df_historico
+    
+    # Obtener la fecha de los datos de hoy
+    fecha_today = df_today["fecha"].iloc[0]
+    
+    # Eliminar datos de esa fecha si ya existen en el histórico
+    df_historico_filtered = df_historico[df_historico["fecha"] != fecha_today].copy()
+    
+    # Combinar
+    df_combined = pd.concat([df_historico_filtered, df_today], ignore_index=True)
+    
+    # Ordenar por fecha descendente
+    df_combined = df_combined.sort_values("fecha", ascending=False)
+    
+    return df_combined
+
+
 # INTERFAZ PRINCIPAL
 def main():
     # Header
@@ -1898,6 +2110,138 @@ def main():
                 st.error(f"❌ Error al cargar datos: {load_error}")
             else:
                 st.success(f"✅ Base de datos cargada exitosamente: {len(df_historico):,} registros")
+                
+                # ========== NUEVA SECCIÓN: AGREGAR DATOS DEL DÍA ACTUAL ==========
+                st.markdown("---")
+                
+                # Inicializar estado para datos combinados
+                if 'df_historico_combined' not in st.session_state:
+                    st.session_state.df_historico_combined = None
+                if 'datos_hoy_agregados' not in st.session_state:
+                    st.session_state.datos_hoy_agregados = False
+                
+                with st.expander("📅 **AGREGAR DATOS DEL DÍA ACTUAL** (Archivo ERP)", expanded=False):
+                    st.markdown("""
+                    <div style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); 
+                                padding: 15px; border-radius: 10px; margin-bottom: 15px;">
+                        <h4 style="color: white; margin: 0;">🔄 Actualización en Tiempo Real</h4>
+                        <p style="color: white; margin: 5px 0 0 0; font-size: 14px;">
+                            Sube tu archivo ERP del día de hoy para ver el análisis actualizado sin esperar a mañana.
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.info("""
+                    **¿Cómo funciona?**
+                    1. 📁 Sube el archivo Excel crudo del ERP con los datos de hoy
+                    2. ⚙️ Configura la hoja y fecha del reporte
+                    3. 🔄 El sistema procesará automáticamente los datos (filtra negativos)
+                    4. 📊 Los datos se combinarán con el histórico para el análisis completo
+                    """)
+                    
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        # Upload del archivo ERP
+                        erp_file_hist = st.file_uploader(
+                            "📁 Subir archivo ERP del día actual",
+                            type=['xlsx', 'xls'],
+                            help="Archivo Excel directo del ERP con inventario actual",
+                            key="erp_uploader_historico"
+                        )
+                    
+                    with col2:
+                        # Configuración
+                        sheet_idx_hist = st.number_input(
+                            "📋 Hoja a procesar",
+                            min_value=0,
+                            max_value=10,
+                            value=0,
+                            help="0 = primera hoja",
+                            key="sheet_idx_hist"
+                        )
+                        
+                        fecha_datos_hoy = st.date_input(
+                            "📅 Fecha de los datos",
+                            value=datetime.now().date(),
+                            help="Fecha que se asignará a estos datos",
+                            key="fecha_datos_hoy"
+                        )
+                    
+                    # Opciones avanzadas
+                    with st.expander("⚙️ Opciones Avanzadas"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            zona_manual = st.text_input(
+                                "🏢 Zona por defecto (si no se detecta)",
+                                value="MANUAL",
+                                help="Se usará si el archivo no tiene columna de zona/compañía",
+                                key="zona_manual_hist"
+                            )
+                        with col2:
+                            st.markdown("**Columnas esperadas:**")
+                            st.caption("Código, Nombre, Almacén, ID Pallet, Inventario físico")
+                    
+                    if erp_file_hist:
+                        # Botón para procesar
+                        if st.button("🚀 Procesar y Agregar al Histórico", type="primary", key="btn_procesar_erp"):
+                            with st.spinner("⏳ Procesando archivo ERP..."):
+                                file_content = erp_file_hist.read()
+                                erp_file_hist.seek(0)  # Reset para poder leer de nuevo si es necesario
+                                
+                                df_today, proc_success, proc_error, proc_stats = preprocess_erp_for_historico(
+                                    file_content,
+                                    erp_file_hist.name,
+                                    sheet_index=sheet_idx_hist,
+                                    fecha_datos=fecha_datos_hoy,
+                                    zona_default=zona_manual
+                                )
+                                
+                                if proc_success and df_today is not None:
+                                    # Combinar con histórico
+                                    df_combined = combine_historico_with_today(df_historico, df_today)
+                                    
+                                    # Guardar en session_state
+                                    st.session_state.df_historico_combined = df_combined
+                                    st.session_state.datos_hoy_agregados = True
+                                    st.session_state.stats_hoy = proc_stats
+                                    
+                                    st.success(f"""
+                                    ✅ **Datos procesados exitosamente!**
+                                    
+                                    - 📊 Registros originales: {proc_stats['total_original']:,}
+                                    - 🔴 Registros negativos: {proc_stats['total_negativos']:,}
+                                    - 📦 Productos únicos: {proc_stats['productos_unicos']:,}
+                                    - 🏭 Almacenes: {proc_stats['almacenes_unicos']:,}
+                                    - 🏢 Zonas detectadas: {', '.join(proc_stats['zonas_detectadas'])}
+                                    - 📅 Fecha asignada: {proc_stats['fecha_datos']}
+                                    """)
+                                    
+                                    # Forzar recarga de la página para usar los nuevos datos
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ Error al procesar: {proc_error}")
+                                    st.info("**Sugerencias:**\n- Verifica que el archivo tenga las columnas correctas\n- Asegúrate de seleccionar la hoja correcta")
+                
+                # Usar datos combinados si existen, sino usar histórico original
+                if st.session_state.datos_hoy_agregados and st.session_state.df_historico_combined is not None:
+                    df_historico = st.session_state.df_historico_combined
+                    
+                    # Mostrar indicador de datos actualizados
+                    st.markdown("""
+                    <div style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); 
+                                padding: 10px 20px; border-radius: 8px; margin-bottom: 15px; display: inline-block;">
+                        <span style="color: white; font-weight: 600;">✅ DATOS ACTUALIZADOS - Incluye archivo ERP del día actual</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Botón para resetear y usar solo DB
+                    if st.button("🔄 Volver a usar solo datos de la DB (sin datos manuales)", key="btn_reset_combined"):
+                        st.session_state.df_historico_combined = None
+                        st.session_state.datos_hoy_agregados = False
+                        st.rerun()
+                
+                st.markdown("---")
                 
                 # OBTENER ÚLTIMO DÍA DISPONIBLE (SIN FILTROS - todos los registros)
                 ultima_fecha = df_historico["fecha"].max()
