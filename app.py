@@ -1387,7 +1387,7 @@ def main():
                     }
                     return colors.get(val, "")
                 
-                styled_analisis = analisis_filtered.style.applymap(format_severity, subset=['Severidad'])
+                styled_analisis = analisis_filtered.style.map(format_severity, subset=['Severidad'])
                 st.dataframe(styled_analisis, width='stretch', height=400)
             
             with tab2:
@@ -1494,7 +1494,7 @@ def main():
                 
                 # Aplicar estilo y mostrar tabla
                 if not super_display.empty:
-                    styled_super = super_display.style.applymap(colorear_super_analisis)
+                    styled_super = super_display.style.map(colorear_super_analisis)
                     st.dataframe(styled_super, width='stretch', height=500)
                     
                     # Estadísticas rápidas - con mejor espaciado
@@ -2552,7 +2552,7 @@ def main():
                     
                     if len(historico_pivot_display) <= 2000:
                         # ✅ Estilo COMPLETO con colores por gravedad
-                        styled_pivot = historico_pivot_display.style.applymap(
+                        styled_pivot = historico_pivot_display.style.map(
                             color_negativo_celda,
                             subset=fecha_cols_str
                         )
@@ -2574,7 +2574,7 @@ def main():
                                 return f'background-color: {color_celdas_none}'
                             return ''
                         
-                        styled_pivot = historico_pivot_display.style.applymap(
+                        styled_pivot = historico_pivot_display.style.map(
                             color_solo_vacias,
                             subset=fecha_cols_str
                         )
