@@ -1150,7 +1150,7 @@ def main():
                         data=buffer,
                         file_name=filename,
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        width='stretch'
+                        use_container_width=True
                     )
 
                     st.success(f"""
@@ -1208,7 +1208,7 @@ def main():
             filter_estado = st.selectbox("Estado", ["Todos", "Activo", "Resuelto"])
 
             # Botón de análisis
-            analyze_button = st.button("🚀 Ejecutar Análisis", type="primary", width='stretch')
+            analyze_button = st.button("🚀 Ejecutar Análisis", type="primary", use_container_width=True)
 
         # Contenido principal
         if analyze_button and uploaded_files:
@@ -1365,11 +1365,11 @@ def main():
             
             col1, col2 = st.columns(2)
             with col1:
-                st.plotly_chart(fig1, use_container_width=True)
-                st.plotly_chart(fig3, use_container_width=True)
+                st.plotly_chart(fig1)
+                st.plotly_chart(fig3)
             with col2:
-                st.plotly_chart(fig2, use_container_width=True)
-                st.plotly_chart(fig4, use_container_width=True)
+                st.plotly_chart(fig2)
+                st.plotly_chart(fig4)
             
             # Tablas de datos
             tab1, tab2, tab3, tab4 = st.tabs(["📊 Análisis Principal", "🔄 Reincidencias", "📈 Súper Análisis", "📋 Datos Crudos"])
@@ -1388,11 +1388,11 @@ def main():
                     return colors.get(val, "")
                 
                 styled_analisis = analisis_filtered.style.map(format_severity, subset=['Severidad'])
-                st.dataframe(styled_analisis, width='stretch', height=400)
+                st.dataframe(styled_analisis, use_container_width=True, height=400)
             
             with tab2:
                 st.subheader("Reincidencias Detectadas")
-                st.dataframe(reincidencias, width='stretch', height=400)
+                st.dataframe(reincidencias, use_container_width=True, height=400)
             
             with tab3:
                 st.subheader("Súper Análisis - Evolución Temporal por Pallet")
@@ -1495,7 +1495,7 @@ def main():
                 # Aplicar estilo y mostrar tabla
                 if not super_display.empty:
                     styled_super = super_display.style.map(colorear_super_analisis)
-                    st.dataframe(styled_super, width='stretch', height=500)
+                    st.dataframe(styled_super, use_container_width=True, height=500)
                     
                     # Estadísticas rápidas - con mejor espaciado
                     st.markdown("---")  # Separador visual después de la tabla
@@ -1549,7 +1549,7 @@ def main():
                                 )
                                 fig_evo.update_traces(line_color="#ff4444", line_width=3)
                                 fig_evo.update_layout(height=350)
-                                st.plotly_chart(fig_evo, use_container_width=True)
+                                st.plotly_chart(fig_evo)
                         
                         with col2:
                             # Gráfico 2: Distribución por almacén de datos filtrados
@@ -1573,7 +1573,7 @@ def main():
                                     title="Distribución por Almacén (Filtrado)"
                                 )
                                 fig_almacen.update_layout(height=350)
-                                st.plotly_chart(fig_almacen, use_container_width=True)
+                                st.plotly_chart(fig_almacen)
                         
                         # Gráfico 3: MAPA DE CALOR EXPANDIDO - SIN LÍMITE DE FILAS
                         if len(date_cols) > 1:
@@ -1626,7 +1626,7 @@ def main():
                                     aspect="auto"
                                 )
                                 fig_heat.update_layout(height=height_map)
-                                st.plotly_chart(fig_heat, use_container_width=True)
+                                st.plotly_chart(fig_heat)
                                 
                                 st.info(f"Mostrando {len(heatmap_data)} de {len(super_filtered)} pallets filtrados")
                         
@@ -1700,7 +1700,7 @@ def main():
                                 )
                             )
 
-                            st.plotly_chart(fig_lines, use_container_width=True)
+                            st.plotly_chart(fig_lines)
 
                             # Información adicional
                             st.info(f"Cada línea representa la evolución diaria de un pallet específico. " +
@@ -1721,7 +1721,7 @@ def main():
         
             with tab4:
                 st.subheader("Datos Crudos Procesados")
-                st.dataframe(df_total, width='stretch', height=400)
+                st.dataframe(df_total, use_container_width=True, height=400)
             
             # Descarga de reporte
             st.subheader("💾 Descargar Reporte")
@@ -1993,7 +1993,7 @@ def main():
                     paper_bgcolor='rgba(0,0,0,0)',
                     font=dict(size=12)
                 )
-                st.plotly_chart(fig_costos_zona, use_container_width=True)
+                st.plotly_chart(fig_costos_zona)
                 
                 # Tabla resumen debajo con cálculo correcto
                 st.markdown("#### 📋 Resumen Detallado por Zona")
@@ -2314,7 +2314,7 @@ def main():
                                 showlegend=False,
                                 xaxis_tickangle=-45
                             )
-                            st.plotly_chart(fig_unidades_alm, use_container_width=True)
+                            st.plotly_chart(fig_unidades_alm)
                         
                         with col2:
                             # Gráfico de costos
@@ -2334,7 +2334,7 @@ def main():
                                 showlegend=False,
                                 xaxis_tickangle=-45
                             )
-                            st.plotly_chart(fig_costos_alm, use_container_width=True)
+                            st.plotly_chart(fig_costos_alm)
                         
                         # Tabla resumen comparativa
                         st.markdown("#### 📋 Tabla Comparativa Detallada")
@@ -2560,7 +2560,6 @@ def main():
                         st.dataframe(
                             styled_pivot,
                             column_config=column_config,
-                            width='stretch',
                             height=500,
                             use_container_width=True,
                             hide_index=True
@@ -2583,7 +2582,6 @@ def main():
                         st.dataframe(
                             styled_pivot,
                             column_config=column_config,
-                            width='stretch',
                             height=500,
                             use_container_width=True,
                             hide_index=True
@@ -2599,7 +2597,6 @@ def main():
                         st.dataframe(
                             historico_pivot_display,
                             column_config=column_config,
-                            width='stretch',
                             height=500,
                             use_container_width=True,
                             hide_index=True
@@ -2695,7 +2692,7 @@ def main():
                                 )
                                 fig_evo_hist.update_traces(line_color="#ff4444", line_width=3)
                                 fig_evo_hist.update_layout(height=350)
-                                st.plotly_chart(fig_evo_hist, use_container_width=True)
+                                st.plotly_chart(fig_evo_hist)
                         
                         with col2:
                             # Distribución por Zona/Compañía (SOLO ÚLTIMO DÍA)
@@ -2714,7 +2711,7 @@ def main():
                                     title=f"🏢 Distribución por Zona (Unidades - {fecha_max_filtrada.strftime('%Y-%m-%d')})"
                                 )
                                 fig_zona_hist.update_layout(height=350)
-                                st.plotly_chart(fig_zona_hist, use_container_width=True)
+                                st.plotly_chart(fig_zona_hist)
                         
                         # Fila 2: Costos por Zona y Almacenes más afectados
                         col1, col2 = st.columns(2)
@@ -2737,7 +2734,7 @@ def main():
                                 )
                                 fig_costos_zona.update_traces(marker_color='#ff6b6b')
                                 fig_costos_zona.update_layout(height=350)
-                                st.plotly_chart(fig_costos_zona, use_container_width=True)
+                                st.plotly_chart(fig_costos_zona)
                         
                         with col2:
                             # Top Almacenes por Stock Negativo - SOLO ÚLTIMO DÍA
@@ -2755,7 +2752,7 @@ def main():
                                 )
                                 fig_almacen_hist.update_traces(marker_color='#4ecdc4')
                                 fig_almacen_hist.update_layout(height=350)
-                                st.plotly_chart(fig_almacen_hist, use_container_width=True)
+                                st.plotly_chart(fig_almacen_hist)
                         
                         # MAPA DE CALOR (USAR COMPLETO)
                         if len(fecha_cols_hist) > 1:
@@ -2804,7 +2801,7 @@ def main():
                                     aspect="auto"
                                 )
                                 fig_heat_hist.update_layout(height=height_map_hist)
-                                st.plotly_chart(fig_heat_hist, use_container_width=True)
+                                st.plotly_chart(fig_heat_hist)
                         
                         # LÍNEAS INDIVIDUALES (USAR COMPLETO)
                         if len(historico_pivot_completo) >= 1:
@@ -2859,7 +2856,7 @@ def main():
                                 hovermode='x unified'
                             )
                             
-                            st.plotly_chart(fig_lines_hist, use_container_width=True)
+                            st.plotly_chart(fig_lines_hist)
                     
                     # DESCARGA - USA EL DATAFRAME COMPLETO (NO LIMITADO)
                     st.markdown("---")
