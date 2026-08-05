@@ -1114,7 +1114,7 @@ def main():
                 tab_preview, tab_stats = st.tabs(["📋 Datos Procesados", "📊 Estadísticas Detalladas"])
 
                 with tab_preview:
-                    st.dataframe(df_procesado.head(100), width='stretch')
+                    st.dataframe(df_procesado.head(100), use_container_width=True)
                     st.caption(f"Mostrando primeras 100 de {len(df_procesado)} filas")
 
                 with tab_stats:
